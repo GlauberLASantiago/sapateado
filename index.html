@@ -34,13 +34,13 @@
             display: flex;
             flex-direction: column;
             height: 100vh;
-            height: 100dvh; /* Melhor responsividade em browsers mobile */
+            height: 100dvh;
             overflow: hidden;
         }
 
         /* --- PALCO 3D (CIMA) --- */
         #stage-container {
-            flex: 1 1 40vh; /* Flexível, ocupa ~40% do ecrã */
+            flex: 1 1 40vh;
             min-height: 30vh;
             position: relative;
             background-color: #1a1a1a;
@@ -156,7 +156,7 @@
             flex: 1;
             padding: 15px;
             overflow-x: auto;
-            -webkit-overflow-scrolling: touch; /* Scroll fluido no mobile */
+            -webkit-overflow-scrolling: touch;
             display: flex;
             flex-direction: column;
             justify-content: center;
@@ -217,6 +217,10 @@
         .control-group { display: flex; align-items: center; gap: 10px; }
         button { padding: 8px 16px; border: none; border-radius: 6px; background: #eee; color: #333; font-weight: bold; cursor: pointer; }
         button:hover { background: #ddd; }
+
+        .upload-btn { padding: 8px 12px; border: none; border-radius: 6px; background: #2196f3; color: white; font-weight: bold; cursor: pointer; transition: background 0.2s; font-size: 0.85em; display: flex; align-items: center; justify-content: center; }
+        .upload-btn:hover { background: #1976d2; }
+        #audio-upload { display: none; }
         
         #play-btn { background: #4caf50; color: white; font-size: 1.1em; padding: 10px 24px; }
         #play-btn.playing { background: #f44336; }
@@ -337,6 +341,13 @@
         </div>
 
         <div class="control-group">
+            <button id="bgm-toggle" style="background: #4caf50; color:white; padding: 8px 12px; font-size: 0.85em;" title="Ligar/Desligar Música">🎵 Música</button>
+            <input type="range" id="bgm-volume" min="0" max="1" step="0.05" value="0.4" style="width: 70px;" title="Volume da Música">
+            <label for="audio-upload" class="upload-btn" title="Carregar MP3 do computador">📂 Carregar</label>
+            <input type="file" id="audio-upload" accept="audio/*">
+        </div>
+
+        <div class="control-group">
             <button id="toggle-glossary-btn" style="background: #2196f3; color:white;">📖 Glossário</button>
             <button id="presets-btn">🎓 Aprender (Presets)</button>
             <button id="save-btn">💾 Salvar</button>
@@ -407,6 +418,12 @@ let scheduleAheadTime = 0.1;
 let lookahead = 25; 
 let timerID;
 
+// Música de Fundo Padrão
+let bgMusic = new Audio('https://upload.wikimedia.org/wikipedia/commons/5/5b/Kevin_MacLeod_-_Carefree.ogg');
+bgMusic.loop = true;
+bgMusic.volume = 0.4;
+let bgMusicEnabled = true;
+
 function initAudio() {
     if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     if (audioCtx.state === 'suspended') audioCtx.resume();
@@ -471,8 +488,8 @@ function nextNote() {
 function updateFootPosition(foot, posStr) {
     const offsets = {
         'C': {x: 0, z: 0},
-        'F': {x: 0, z: -40},  // Frente: Move-se na direção da ponta do pé (-Z)
-        'B': {x: 0, z: 40},   // Trás: Move-se na direção do calcanhar (+Z)
+        'F': {x: 0, z: -40},
+        'B': {x: 0, z: 40},
         'L': {x: -30, z: 0},  
         'R': {x: 30, z: 0},   
         'X': {x: (foot === 'L' ? 40 : -40), z: -10} 
@@ -512,6 +529,12 @@ function startPlayback() {
     updateFootPosition('L', state.sequence[0].LPos || 'C');
     updateFootPosition('R', state.sequence[0].RPos || 'C');
     nextNoteTime = audioCtx.currentTime + 0.05;
+    
+    if (bgMusicEnabled) {
+        bgMusic.currentTime = 0;
+        bgMusic.play().catch(e => console.log("Áudio bloqueado:", e));
+    }
+
     document.getElementById('play-btn').textContent = '⏹ Stop';
     document.getElementById('play-btn').classList.add('playing');
     scheduler();
@@ -519,6 +542,10 @@ function startPlayback() {
 
 function stopPlayback() {
     state.isPlaying = false; window.clearTimeout(timerID);
+    
+    bgMusic.pause();
+    bgMusic.currentTime = 0;
+
     document.getElementById('play-btn').textContent = '▶ Play';
     document.getElementById('play-btn').classList.remove('playing');
     document.querySelectorAll('.time-cell').forEach(c => c.classList.remove('playing'));
@@ -582,7 +609,10 @@ function initUI() {
 
     const bpmDisplay = document.getElementById('bpm-display');
     document.getElementById('bpm-slider').addEventListener('input', (e) => { state.bpm = e.target.value; bpmDisplay.textContent = state.bpm; });
-    document.getElementById('speed-select').addEventListener('change', (e) => { state.speedMultiplier = parseFloat(e.target.value); });
+    document.getElementById('speed-select').addEventListener('change', (e) => { 
+        state.speedMultiplier = parseFloat(e.target.value); 
+        bgMusic.playbackRate = state.speedMultiplier;
+    });
 
     const metroBtn = document.getElementById('metro-btn');
     metroBtn.addEventListener('click', () => {
@@ -597,6 +627,28 @@ function initUI() {
         loopBtn.textContent = state.loopOn ? '🔁 Loop: ON' : '➡️ Loop: OFF';
         loopBtn.style.background = state.loopOn ? '#4caf50' : '#ddd';
         loopBtn.style.color = state.loopOn ? 'white' : '#333';
+    });
+
+    const bgmToggle = document.getElementById('bgm-toggle');
+    bgmToggle.addEventListener('click', () => {
+        bgMusicEnabled = !bgMusicEnabled;
+        bgmToggle.style.background = bgMusicEnabled ? '#4caf50' : '#ddd';
+        bgmToggle.style.color = bgMusicEnabled ? 'white' : '#333';
+        if (!bgMusicEnabled && !bgMusic.paused) bgMusic.pause();
+        if (bgMusicEnabled && state.isPlaying) bgMusic.play();
+    });
+
+    const bgmVolume = document.getElementById('bgm-volume');
+    bgmVolume.addEventListener('input', (e) => { bgMusic.volume = e.target.value; });
+
+    const audioUpload = document.getElementById('audio-upload');
+    audioUpload.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            const url = URL.createObjectURL(file);
+            bgMusic.src = url;
+            alert(`Áudio "${file.name}" carregado! Dica: Ajuste o BPM do sequenciador para sincronizar os passos com a sua música.`);
+        }
     });
 
     document.getElementById('toggle-glossary-btn').addEventListener('click', toggleGlossary);
@@ -660,7 +712,6 @@ function updatePlayheadUI(stepIndex) {
         const wrapper = document.getElementById('timeline-wrapper');
         const rect = activeCells[0].getBoundingClientRect();
         const containerRect = wrapper.getBoundingClientRect();
-        // Inclui o scrollLeft para manter a precisão do alinhamento ao rolar em telas pequenas
         document.getElementById('playhead').style.left = `${rect.left - containerRect.left + wrapper.scrollLeft + (rect.width/2)}px`;
     }
 }
@@ -670,28 +721,27 @@ let scene, camera, renderer, controls;
 const shoes3D = { L: null, R: null };
 const glowLights = { L: null, R: null };
 const feetVisuals = {
-    L: { x: -25, z: 0, targetX: -25, targetZ: 0, isAnimating: false, animProgress: 0, glowType: null, glowIntensity: 0 },
-    R: { x: 25, z: 0, targetX: 25, targetZ: 0, isAnimating: false, animProgress: 0, glowType: null, glowIntensity: 0 }
+    // Adicionado os atributos: currentPitch, restingPitch, startPitch
+    L: { x: -25, z: 0, targetX: -25, targetZ: 0, isAnimating: false, animProgress: 0, glowType: null, glowIntensity: 0, currentPitch: 0, restingPitch: 0, startPitch: 0 },
+    R: { x: 25, z: 0, targetX: 25, targetZ: 0, isAnimating: false, animProgress: 0, glowType: null, glowIntensity: 0, currentPitch: 0, restingPitch: 0, startPitch: 0 }
 };
 
-// Gera o contorno realista da sola do sapato
 function createShoeShape(isLeft) {
     const shape = new THREE.Shape();
     const flip = isLeft ? -1 : 1;
     shape.moveTo(0, 10);
-    shape.bezierCurveTo(4 * flip, 10, 6 * flip, 7, 5.5 * flip, 3); // Calcanhar externo
-    shape.bezierCurveTo(5 * flip, -1, 7.5 * flip, -5, 8.5 * flip, -9); // Arco externo
-    shape.bezierCurveTo(9.5 * flip, -15, 5 * flip, -18, 0, -18); // Bico externo
-    shape.bezierCurveTo(-5 * flip, -18, -8.5 * flip, -13, -7.5 * flip, -9); // Bico interno
-    shape.bezierCurveTo(-6 * flip, -3, -3 * flip, 1, -4.5 * flip, 3); // Arco interno (curva do pé)
-    shape.bezierCurveTo(-5.5 * flip, 7, -4 * flip, 10, 0, 10); // Calcanhar interno
+    shape.bezierCurveTo(4 * flip, 10, 6 * flip, 7, 5.5 * flip, 3);
+    shape.bezierCurveTo(5 * flip, -1, 7.5 * flip, -5, 8.5 * flip, -9);
+    shape.bezierCurveTo(9.5 * flip, -15, 5 * flip, -18, 0, -18);
+    shape.bezierCurveTo(-5 * flip, -18, -8.5 * flip, -13, -7.5 * flip, -9);
+    shape.bezierCurveTo(-6 * flip, -3, -3 * flip, 1, -4.5 * flip, 3);
+    shape.bezierCurveTo(-5.5 * flip, 7, -4 * flip, 10, 0, 10);
     return shape;
 }
 
 function initThreeJS() {
     const container = document.getElementById('canvas3d');
     scene = new THREE.Scene();
-    // Fundo e nevoeiro mais quentes para um aspeto de palco de madeira
     scene.background = new THREE.Color(0x2a1f1a);
     scene.fog = new THREE.Fog(0x2a1f1a, 100, 400);
 
@@ -710,7 +760,6 @@ function initThreeJS() {
     controls.target.set(0, 0, 0);
     controls.maxPolarAngle = Math.PI / 2 + 0.05; 
 
-    // Iluminação refinada
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
     scene.add(ambientLight);
 
@@ -719,24 +768,14 @@ function initThreeJS() {
     dirLight.castShadow = true;
     dirLight.shadow.mapSize.width = 2048;
     dirLight.shadow.mapSize.height = 2048;
-    dirLight.shadow.camera.near = 10;
-    dirLight.shadow.camera.far = 300;
-    dirLight.shadow.camera.left = -100;
-    dirLight.shadow.camera.right = 100;
-    dirLight.shadow.camera.top = 100;
-    dirLight.shadow.camera.bottom = -100;
-    dirLight.shadow.bias = -0.001;
     scene.add(dirLight);
 
     const fillLight = new THREE.DirectionalLight(0xaabbff, 0.3);
     fillLight.position.set(-50, 50, -50);
     scene.add(fillLight);
 
-    // Chão (Piso de Madeira)
     const floorGeometry = new THREE.PlaneGeometry(500, 500);
-    const floorMaterial = new THREE.MeshStandardMaterial({ 
-        color: 0x4a2e15, roughness: 0.6, metalness: 0.1 
-    });
+    const floorMaterial = new THREE.MeshStandardMaterial({ color: 0x4a2e15, roughness: 0.6, metalness: 0.1 });
     const floor = new THREE.Mesh(floorGeometry, floorMaterial);
     floor.rotation.x = -Math.PI / 2;
     floor.receiveShadow = true;
@@ -748,13 +787,11 @@ function initThreeJS() {
     gridHelper.position.y = 0.1;
     scene.add(gridHelper);
 
-    // Construir os Sapatos Realistas
     shoes3D.L = createShoeGroup(0x8ab4f8, true);
     shoes3D.R = createShoeGroup(0xf28b82, false);
     scene.add(shoes3D.L);
     scene.add(shoes3D.R);
 
-    // Luzes de Glow para feedback visual
     glowLights.L = new THREE.PointLight(0x8ab4f8, 0, 60);
     glowLights.R = new THREE.PointLight(0xf28b82, 0, 60);
     scene.add(glowLights.L);
@@ -772,26 +809,14 @@ function initThreeJS() {
 function createShoeGroup(mainColor, isLeft) {
     const group = new THREE.Group();
 
-    // Materiais Realistas com Transparência (Efeito Translúcido)
     const matTap = new THREE.MeshStandardMaterial({ color: 0xdddddd, metalness: 0.9, roughness: 0.2 });
+    const matSoleBase = new THREE.MeshStandardMaterial({ color: 0x110a05, roughness: 0.9, transparent: true, opacity: 0.85 });
+    const matTrim = new THREE.MeshStandardMaterial({ color: 0x3d2314, roughness: 0.8, transparent: true, opacity: 0.9 });
+    const matUpper = new THREE.MeshStandardMaterial({ color: mainColor, roughness: 0.3, metalness: 0.2, transparent: true, opacity: 0.65 });
+    const matInside = new THREE.MeshBasicMaterial({ color: 0x050505, transparent: true, opacity: 0.8 });
     
-    const matSoleBase = new THREE.MeshStandardMaterial({ 
-        color: 0x110a05, roughness: 0.9, transparent: true, opacity: 0.85 
-    });
-    const matTrim = new THREE.MeshStandardMaterial({ 
-        color: 0x3d2314, roughness: 0.8, transparent: true, opacity: 0.9 
-    });
-    const matUpper = new THREE.MeshStandardMaterial({ 
-        color: mainColor, roughness: 0.3, metalness: 0.2, 
-        transparent: true, opacity: 0.65 // Deixa o sapato translúcido para a luz aparecer!
-    });
-    const matInside = new THREE.MeshBasicMaterial({ 
-        color: 0x050505, transparent: true, opacity: 0.8 
-    });
-    
-    // Chapas de Metal (Taps) - Assentes no chão (Y ~ 0.2)
     const tapToe = new THREE.Mesh(new THREE.CylinderGeometry(6.5, 6.5, 0.4, 32), matTap);
-    tapToe.position.set((isLeft ? -0.5 : 0.5), 0.2, -13); // Movido para -13 para alinhar perfeitamente
+    tapToe.position.set((isLeft ? -0.5 : 0.5), 0.2, -13); 
     tapToe.castShadow = true;
     group.add(tapToe);
 
@@ -800,43 +825,37 @@ function createShoeGroup(mainColor, isLeft) {
     tapHeel.castShadow = true;
     group.add(tapHeel);
 
-    // Bloco do Salto (Heel Block)
     const heelBlock = new THREE.Mesh(new THREE.CylinderGeometry(4.8, 5.2, 3.5, 32), matSoleBase);
     heelBlock.position.set(0, 2.15, 6);
     heelBlock.castShadow = true;
     group.add(heelBlock);
 
-    // --- PARTE SUPERIOR INCLINADA (TILTED) ---
     const tiltedGroup = new THREE.Group();
-    tiltedGroup.position.set(0, 3.9, 6); // Eixo de rotação no topo do salto
-    tiltedGroup.rotation.x = -0.25; // Rotação NEGATIVA para fazer o bico encostar perfeitamente na chapa!
+    tiltedGroup.position.set(0, 3.9, 6); 
+    tiltedGroup.rotation.x = -0.25; 
     group.add(tiltedGroup);
 
-    // 1. Sola Realista (Extrusão)
     const shape = createShoeShape(isLeft);
     const extrudeSettings = { depth: 1.2, bevelEnabled: true, bevelThickness: 0.3, bevelSize: 0.3, bevelSegments: 3 };
     const soleGeo = new THREE.ExtrudeGeometry(shape, extrudeSettings);
     soleGeo.rotateX(Math.PI / 2); 
     const sole = new THREE.Mesh(soleGeo, matSoleBase);
-    sole.position.set(0, 1.2, -6); // Offset para alinhar a geometria com o eixo
+    sole.position.set(0, 1.2, -6); 
     sole.castShadow = true;
     tiltedGroup.add(sole);
 
-    // 2. Borda/Costura da Sola (Welt)
     const trimGeo = new THREE.ExtrudeGeometry(shape, { depth: 0.3, bevelEnabled: false });
     trimGeo.rotateX(Math.PI / 2);
     const trim = new THREE.Mesh(trimGeo, matTrim);
     trim.position.set(0, 1.5, -6);
-    trim.scale.set(1.03, 1, 1.03); // Ligeiramente mais largo
+    trim.scale.set(1.03, 1, 1.03); 
     trim.castShadow = true;
     tiltedGroup.add(trim);
 
-    // --- CORPO DE COURO (Upper) ---
     const upperGroup = new THREE.Group();
     upperGroup.position.set(0, 1.5, -6); 
     tiltedGroup.add(upperGroup);
 
-    // Bico do Sapato (Toe Box)
     const toeGeo = new THREE.SphereGeometry(7, 32, 16);
     const toe = new THREE.Mesh(toeGeo, matUpper);
     toe.scale.set(1.05, 0.7, 1.2);
@@ -844,7 +863,6 @@ function createShoeGroup(mainColor, isLeft) {
     toe.castShadow = true;
     upperGroup.add(toe);
 
-    // Corpo Central (Mid/Laces)
     const midGeo = new THREE.CylinderGeometry(6.5, 7.5, 12, 32);
     const mid = new THREE.Mesh(midGeo, matUpper);
     mid.rotation.x = Math.PI / 2 + 0.15; 
@@ -852,7 +870,6 @@ function createShoeGroup(mainColor, isLeft) {
     mid.castShadow = true;
     upperGroup.add(mid);
 
-    // Calcanhar / Tornozelo
     const heelGeo = new THREE.SphereGeometry(6.5, 32, 16);
     const heel = new THREE.Mesh(heelGeo, matUpper);
     heel.scale.set(0.95, 1.4, 1.1);
@@ -860,13 +877,11 @@ function createShoeGroup(mainColor, isLeft) {
     heel.castShadow = true;
     upperGroup.add(heel);
 
-    // Abertura do Tornozelo (Collar)
     const collar = new THREE.Mesh(new THREE.CylinderGeometry(4.5, 4.5, 3, 32), matInside);
     collar.position.set(0, 12, 3);
     collar.rotation.x = -0.15;
     upperGroup.add(collar);
 
-    // Cadarços (Laces)
     const laceMat = new THREE.MeshStandardMaterial({ color: 0xdddddd });
     for(let i=0; i<4; i++) {
         const lace = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 5), laceMat);
@@ -881,8 +896,32 @@ function createShoeGroup(mainColor, isLeft) {
 
 function triggerAnimation(foot, type) {
     const f = feetVisuals[foot];
-    f.isAnimating = true; f.animProgress = 0;
-    f.glowType = type; f.glowIntensity = 1.0;
+    f.isAnimating = true; 
+    f.animProgress = 0;
+    f.glowType = type; 
+    f.glowIntensity = 1.0;
+    
+    // Guarda a inclinação inicial para a transição suave
+    f.startPitch = f.currentPitch;
+
+    // Define a nova "Pose de Descanso" dependendo do passo
+    switch(type) {
+        case 'Toe': 
+            f.restingPitch = -0.7; // Fica equilibrado na ponta
+            break;
+        case 'Heel': 
+            f.restingPitch = 0.7;  // Fica equilibrado no calcanhar
+            break;
+        case 'Ball': 
+            f.restingPitch = -0.2; // Fica levemente na ponta (meia ponta)
+            break;
+        case 'Step':
+        case 'Stomp':
+        case 'Shuffle':
+        default:
+            f.restingPitch = 0;    // Volta a ficar liso/reto no chão
+            break;
+    }
 }
 
 function animate3D() {
@@ -901,65 +940,71 @@ function animate3D() {
 
         // 2. Animação de Elevação, Rotação e Deslizamento
         let elevation = 0;
-        let pitch = 0;
+        let pitch = vis.restingPitch; // Por padrão, segura a última pose
         let zOffset = 0;
 
         if (vis.isAnimating) {
             const p = vis.animProgress;
-            // doubleBounce faz o sapato pular duas vezes (0 -> 1 -> 0 -> 1 -> 0)
-            // O impacto no chão acontece exatamente em p = 0.5 (o meio da animação)
-            const doubleBounce = Math.abs(Math.sin(p * Math.PI * 2));
-            const singleArc = Math.sin(p * Math.PI); 
+            
+            // "Bounce" singular (sobe e depois aterra exatamente na nova pose)
+            const bounce = Math.sin(p * Math.PI); 
+            // Interpolação (Easing) suave para a rotação (pitch)
+            const ease = 1 - Math.pow(1 - p, 3); // easeOutCubic
+
+            // O pé intercala suavemente do ângulo onde estava para o novo ângulo de descanso
+            pitch = vis.startPitch + (vis.restingPitch - vis.startPitch) * ease;
 
             switch(vis.glowType) {
                 case 'Step': 
-                    elevation = doubleBounce * 6; 
-                    break;
-                case 'Ball': 
-                    elevation = doubleBounce * 6; 
-                    pitch = -0.2 * singleArc;
+                case 'Ball':
+                    elevation = bounce * 8; 
                     break;
                 case 'Stomp': 
-                    elevation = doubleBounce * 12; 
+                    elevation = bounce * 12; 
                     break;
                 case 'Toe': 
-                    elevation = doubleBounce * 10; // O pé inteiro levanta
-                    pitch = -0.8 * singleArc; // Calcanhar no alto, ponta para baixo
-                    break;
                 case 'Heel': 
-                    elevation = doubleBounce * 10; // O pé inteiro levanta
-                    pitch = 0.8 * singleArc; // Ponta no alto, calcanhar para baixo
+                    elevation = bounce * 10; 
                     break;
                 case 'Shuffle':
-                    elevation = doubleBounce * 4;
-                    pitch = Math.sin(p * Math.PI * 2) * 0.25;
-                    zOffset = -Math.sin(p * Math.PI * 2) * 12; // Movimenta o pé pra frente e pra trás
+                    elevation = bounce * 5;
+                    // Movimenta o pé pra frente e pra trás rapidamente
+                    zOffset = Math.sin(p * Math.PI * 2) * -12; 
                     break;
             }
 
             vis.animProgress += 0.08;
-            if (vis.animProgress >= 1) vis.isAnimating = false;
+            if (vis.animProgress >= 1) {
+                vis.isAnimating = false;
+                vis.currentPitch = vis.restingPitch; // Tranca na pose
+                pitch = vis.restingPitch;
+            } else {
+                vis.currentPitch = pitch;
+            }
+        } else {
+            // Quando a animação acaba, mantemos o pé exatamente onde parou!
+            pitch = vis.restingPitch;
+            vis.currentPitch = pitch;
         }
 
         shoe.rotation.x = pitch;
 
         // Física: Pivot de Ancoragem
-        // Garante que, independentemente da rotação, a parte mais baixa do sapato não atravesse o chão
+        // Garante que o pé não atravesse o chão quando rotacionado, ancorando o salto ou o bico ao solo!
         let pivotCompensation = 0;
         let zPivotComp = 0;
-        if (pitch < 0) {
-            pivotCompensation = Math.sin(Math.abs(pitch)) * 13; // Ancora na chapa da ponta
+        if (pitch < 0) { // Ponta do pé no chão
+            pivotCompensation = Math.sin(Math.abs(pitch)) * 13; 
             zPivotComp = -(1 - Math.cos(pitch)) * 13;
-        } else if (pitch > 0) {
-            pivotCompensation = Math.sin(Math.abs(pitch)) * 6; // Ancora na chapa do calcanhar
+        } else if (pitch > 0) { // Calcanhar no chão
+            pivotCompensation = Math.sin(Math.abs(pitch)) * 6; 
             zPivotComp = (1 - Math.cos(pitch)) * 6;
         }
         
-        // O sapato sobe com a 'elevation' e o pivot garante o toque exato no chão
         shoe.position.y = elevation + pivotCompensation;
         shoe.position.z = vis.z + zOffset + zPivotComp;
 
-        // 3. Atualizar Luzes de Glow (Feedback Visual)
+        // 3. Atualizar Luzes de Glow
         if (vis.glowIntensity > 0) {
             vis.glowIntensity -= 0.05;
             if (vis.glowIntensity < 0) vis.glowIntensity = 0;
@@ -969,7 +1014,6 @@ function animate3D() {
         if(vis.glowType === 'Stomp') light.color.setHex(0xffd700);
         else light.color.setHex(foot === 'L' ? 0x8ab4f8 : 0xf28b82);
 
-        // Posiciona a luz no INTERIOR do sapato, quase no topo
         light.position.x = shoe.position.x;
         light.position.y = shoe.position.y + 10; 
         light.position.z = shoe.position.z - 2;
