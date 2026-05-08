@@ -1,0 +1,1086 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sapateado Fácil - Sequenciador Iniciante</title>
+    <!-- Favicon -->
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>👞</text></svg>">
+    
+    <!-- Bibliotecas Three.js e OrbitControls -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+    <style>
+        :root {
+            --bg-color: #f5f0ea;
+            --left-color: #8ab4f8; 
+            --left-color-dark: #669df6;
+            --right-color: #f28b82; 
+            --right-color-dark: #ee675c;
+            --text-main: #4a4a4a;
+            --ui-bg: #ffffff;
+            --ui-border: #e0e0e0;
+            --active-glow: rgba(255, 215, 0, 0.6);
+            --cell-size: 30px;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            height: 100dvh; /* Melhor responsividade em browsers mobile */
+            overflow: hidden;
+        }
+
+        /* --- PALCO 3D (CIMA) --- */
+        #stage-container {
+            flex: 1 1 40vh; /* Flexível, ocupa ~40% do ecrã */
+            min-height: 30vh;
+            position: relative;
+            background-color: #1a1a1a;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+        }
+
+        #canvas3d {
+            display: block;
+            width: 100%;
+            height: 100%;
+            cursor: grab;
+        }
+        #canvas3d:active { cursor: grabbing; }
+
+        #hint {
+            position: absolute;
+            top: 15px;
+            left: 15px;
+            background: rgba(255,255,255,0.9);
+            padding: 8px 15px;
+            border-radius: 8px;
+            font-size: 0.85em;
+            color: #333;
+            pointer-events: none;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+            z-index: 10;
+        }
+
+        /* Painel do Glossário Flutuante */
+        #glossary-panel {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            background: rgba(255, 255, 255, 0.95);
+            border: 2px solid var(--ui-border);
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            z-index: 20;
+            display: none;
+            flex-direction: column;
+            gap: 8px;
+            width: 160px;
+        }
+        #glossary-panel.show { display: flex; }
+        .glossary-btn {
+            padding: 8px;
+            background: #f9f9f9;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            display: flex;
+            justify-content: space-between;
+        }
+        .glossary-btn:hover { background: #eee; }
+
+        /* --- ÁREA PRINCIPAL (MEIO) --- */
+        #main-workspace {
+            display: flex;
+            flex: 1 1 auto;
+            height: auto;
+            min-height: 250px;
+            background: var(--ui-bg);
+            border-top: 2px solid var(--ui-border);
+            border-bottom: 2px solid var(--ui-border);
+        }
+
+        /* Biblioteca Esquerda */
+        #library {
+            width: 250px;
+            min-width: 250px;
+            border-right: 2px solid var(--ui-border);
+            padding: 10px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .library-title { font-size: 0.9em; font-weight: bold; text-transform: uppercase; color: #888; text-align: center; }
+        .step-group { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+
+        .step-btn {
+            padding: 8px 5px;
+            border: 1px solid var(--ui-border);
+            border-radius: 6px;
+            background: white;
+            cursor: grab;
+            font-size: 0.8em;
+            font-weight: bold;
+            text-align: center;
+            transition: all 0.2s;
+        }
+        .step-btn:active { cursor: grabbing; }
+
+        .step-btn.left { color: var(--left-color-dark); border-left: 4px solid var(--left-color); }
+        .step-btn.left:hover, .step-btn.left.selected { background-color: rgba(138, 180, 248, 0.1); border-color: var(--left-color); }
+
+        .step-btn.right { color: var(--right-color-dark); border-left: 4px solid var(--right-color); }
+        .step-btn.right:hover, .step-btn.right.selected { background-color: rgba(242, 139, 130, 0.1); border-color: var(--right-color); }
+
+        .step-btn.pos { color: #b08d00; border-left: 4px solid #ffd54f; }
+        .step-btn.pos:hover, .step-btn.pos.selected { background-color: rgba(255, 213, 79, 0.2); border-color: #ffd54f; }
+
+        .step-btn.selected { box-shadow: 0 0 5px rgba(0,0,0,0.2); transform: scale(0.95); }
+
+        /* Timeline Direita */
+        #timeline-wrapper {
+            flex: 1;
+            padding: 15px;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch; /* Scroll fluido no mobile */
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            position: relative;
+        }
+
+        .timeline-header, .timeline-row {
+            display: grid;
+            grid-template-columns: 40px repeat(32, var(--cell-size));
+            gap: 2px;
+            margin-bottom: 5px;
+            align-items: center;
+        }
+        .timeline-header { font-size: 0.7em; color: #888; text-align: center; }
+        
+        .beat-marker { grid-column: span 4; border-left: 1px solid #ccc; padding-left: 2px; text-align: left; }
+
+        .row-label { font-weight: bold; font-size: 0.9em; text-align: right; padding-right: 10px; }
+        .row-label.left { color: var(--left-color-dark); }
+        .row-label.right { color: var(--right-color-dark); }
+
+        .time-cell {
+            width: var(--cell-size);
+            height: var(--cell-size);
+            background: #f9f9f9;
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
+            cursor: pointer;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 0.6em;
+            font-weight: bold;
+            transition: all 0.1s;
+        }
+        .time-cell:nth-child(4n + 2) { border-left-width: 2px; border-left-color: #ccc; }
+
+        .time-cell.active-left { background-color: var(--left-color); color: white; border-color: var(--left-color-dark); }
+        .time-cell.active-right { background-color: var(--right-color); color: white; border-color: var(--right-color-dark); }
+        .time-cell.active-pos { background-color: #ffd54f; color: #333; border-color: #ffca28; }
+
+        .time-cell.playing { box-shadow: 0 0 10px var(--active-glow); transform: scale(1.1); z-index: 10; }
+
+        /* Playhead visual */
+        #playhead {
+            position: absolute;
+            top: 30px; bottom: 10px; width: 2px;
+            background-color: rgba(255, 0, 0, 0.5);
+            pointer-events: none; transition: left 0.1s linear;
+            left: 55px; z-index: 5;
+        }
+
+        /* --- CONTROLES (BAIXO) --- */
+        #controls {
+            padding: 15px 20px; background: var(--ui-bg); display: flex;
+            align-items: center; justify-content: space-between; gap: 15px; flex-wrap: wrap;
+        }
+        .control-group { display: flex; align-items: center; gap: 10px; }
+        button { padding: 8px 16px; border: none; border-radius: 6px; background: #eee; color: #333; font-weight: bold; cursor: pointer; }
+        button:hover { background: #ddd; }
+        
+        #play-btn { background: #4caf50; color: white; font-size: 1.1em; padding: 10px 24px; }
+        #play-btn.playing { background: #f44336; }
+        input[type="range"] { width: 100px; }
+        .bpm-display { min-width: 60px; font-variant-numeric: tabular-nums; }
+
+        /* Modal */
+        #modal-overlay {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.5); display: none; justify-content: center; align-items: center; z-index: 100;
+        }
+        #modal-content { background: white; padding: 20px; border-radius: 10px; width: 90%; max-width: 400px; box-shadow: 0 5px 15px rgba(0,0,0,0.3); }
+        .modal-list { list-style: none; margin-bottom: 15px; max-height: 200px; overflow-y: auto;}
+        .modal-list li { padding: 10px; border-bottom: 1px solid #eee; cursor: pointer; }
+        .modal-list li:hover { background: #f9f9f9; }
+        .modal-actions { display: flex; justify-content: flex-end; gap: 10px; }
+
+        @media (max-width: 768px) {
+            #main-workspace { flex-direction: column; }
+            #library { width: 100%; min-width: 100%; border-right: none; border-bottom: 2px solid var(--ui-border); max-height: 180px; }
+            .library-title { text-align: left; padding-left: 5px; }
+            .step-group { display: flex; overflow-x: auto; padding-bottom: 8px; -webkit-overflow-scrolling: touch; gap: 8px; }
+            .step-btn { flex: 0 0 65px; }
+            #stage-container { flex: 0 0 35vh; min-height: 35vh; }
+            .timeline-header, .timeline-row { grid-template-columns: 35px repeat(32, 30px); }
+            :root { --cell-size: 30px; }
+            #playhead { left: 50px; }
+            #hint { display: none; }
+            #controls { justify-content: center; }
+            .control-group { flex-wrap: wrap; justify-content: center; }
+            #glossary-panel { max-height: 80vh; overflow-y: auto; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 1. PALCO 3D -->
+    <div id="stage-container">
+        <div id="hint">🖱️ <b>Câmera 3D:</b> Clique e arraste para girar. Role para Zoom.</div>
+        
+        <!-- GLOSSÁRIO FLUTUANTE -->
+        <div id="glossary-panel">
+            <div style="font-size:0.85em; color:#666; font-weight:bold; text-align:center; margin-bottom: 5px;">GLOSSÁRIO DE PASSOS</div>
+            <button class="glossary-btn" onclick="previewGlossaryStep('Step')">Step <span>🔊</span></button>
+            <button class="glossary-btn" onclick="previewGlossaryStep('Toe')">Toe <span>🔊</span></button>
+            <button class="glossary-btn" onclick="previewGlossaryStep('Heel')">Heel <span>🔊</span></button>
+            <button class="glossary-btn" onclick="previewGlossaryStep('Shuffle')">Shuffle <span>🔊</span></button>
+            <button class="glossary-btn" onclick="previewGlossaryStep('Ball')">Ball <span>🔊</span></button>
+            <button class="glossary-btn" onclick="previewGlossaryStep('Stomp')">Stomp <span>🔊</span></button>
+            <button onclick="toggleGlossary()" style="margin-top:5px; background:#ddd; padding:5px;">Fechar</button>
+        </div>
+
+        <div id="canvas3d"></div>
+    </div>
+
+    <!-- 2 e 3. BIBLIOTECA E TIMELINE -->
+    <div id="main-workspace">
+        <div id="library">
+            <div class="library-title">Pé Esquerdo</div>
+            <div class="step-group">
+                <div class="step-btn left" draggable="true" data-foot="L" data-type="Step">Step</div>
+                <div class="step-btn left" draggable="true" data-foot="L" data-type="Toe">Toe</div>
+                <div class="step-btn left" draggable="true" data-foot="L" data-type="Heel">Heel</div>
+                <div class="step-btn left" draggable="true" data-foot="L" data-type="Shuffle">Shuffle</div>
+                <div class="step-btn left" draggable="true" data-foot="L" data-type="Ball">Ball</div>
+                <div class="step-btn left" draggable="true" data-foot="L" data-type="Stomp">Stomp</div>
+            </div>
+            <div class="library-title" style="margin-top: 10px;">Pé Direito</div>
+            <div class="step-group">
+                <div class="step-btn right" draggable="true" data-foot="R" data-type="Step">Step</div>
+                <div class="step-btn right" draggable="true" data-foot="R" data-type="Toe">Toe</div>
+                <div class="step-btn right" draggable="true" data-foot="R" data-type="Heel">Heel</div>
+                <div class="step-btn right" draggable="true" data-foot="R" data-type="Shuffle">Shuffle</div>
+                <div class="step-btn right" draggable="true" data-foot="R" data-type="Ball">Ball</div>
+                <div class="step-btn right" draggable="true" data-foot="R" data-type="Stomp">Stomp</div>
+            </div>
+            <div class="library-title" style="margin-top: 15px;">Posição (Espaço)</div>
+            <div class="step-group">
+                <div class="step-btn pos" draggable="true" data-type="Pos" data-val="C">Centro</div>
+                <div class="step-btn pos" draggable="true" data-type="Pos" data-val="F">Frente</div>
+                <div class="step-btn pos" draggable="true" data-type="Pos" data-val="B">Trás</div>
+                <div class="step-btn pos" draggable="true" data-type="Pos" data-val="L">Esq</div>
+                <div class="step-btn pos" draggable="true" data-type="Pos" data-val="R">Dir</div>
+                <div class="step-btn pos" draggable="true" data-type="Pos" data-val="X">Cruza</div>
+            </div>
+        </div>
+
+        <div id="timeline-wrapper">
+            <div id="playhead"></div>
+            <div class="timeline-header" id="tl-header"><div></div></div>
+            <div class="timeline-row" id="row-left-pos"><div class="row-label left" style="font-size: 0.65em;">POS L</div></div>
+            <div class="timeline-row" id="row-left"><div class="row-label left">ESQ</div></div>
+            <div class="timeline-row" id="row-right-pos"><div class="row-label right" style="font-size: 0.65em;">POS R</div></div>
+            <div class="timeline-row" id="row-right"><div class="row-label right">DIR</div></div>
+        </div>
+    </div>
+
+    <!-- 4. CONTROLES -->
+    <div id="controls">
+        <div class="control-group">
+            <button id="play-btn">▶ Play</button>
+            <button id="clear-btn" title="Limpar Tudo">🗑️ Limpar</button>
+        </div>
+        
+        <div class="control-group">
+            <label>BPM:</label>
+            <input type="range" id="bpm-slider" min="40" max="140" value="90">
+            <span id="bpm-display" class="bpm-display">90</span>
+            <label style="margin-left: 10px;">Velocidade:</label>
+            <select id="speed-select">
+                <option value="0.5">50%</option><option value="0.75">75%</option><option value="1" selected>100%</option>
+            </select>
+        </div>
+
+        <div class="control-group">
+            <button id="metro-btn" style="background: #ddd;">🔔 Metrônomo: ON</button>
+            <button id="loop-btn" style="background: #4caf50; color:white;">🔁 Loop: ON</button>
+        </div>
+
+        <div class="control-group">
+            <button id="toggle-glossary-btn" style="background: #2196f3; color:white;">📖 Glossário</button>
+            <button id="presets-btn">🎓 Aprender (Presets)</button>
+            <button id="save-btn">💾 Salvar</button>
+        </div>
+    </div>
+
+    <!-- Modal Base -->
+    <div id="modal-overlay">
+        <div id="modal-content">
+            <h3 id="modal-title">Título</h3>
+            <ul id="modal-list" class="modal-list"></ul>
+            <div id="save-input-area" style="display:none; margin-bottom: 15px;">
+                <input type="text" id="save-name" placeholder="Nome da sequência" style="width:100%; padding: 8px;">
+            </div>
+            <div class="modal-actions">
+                <button id="modal-close">Cancelar</button>
+                <button id="modal-confirm" style="background: #4caf50; color:white; display:none;">Confirmar</button>
+            </div>
+        </div>
+    </div>
+
+<script>
+/**
+ * ESTADO E PRESETS
+ */
+const state = {
+    bpm: 90, speedMultiplier: 1.0, isPlaying: false, metronomeOn: true, loopOn: true,
+    totalSteps: 32, currentStep: 0,
+    sequence: Array.from({ length: 32 }, () => ({ L: null, R: null, LPos: null, RPos: null })),
+    selectedTool: null, draggedData: null
+};
+
+const presets = {
+    "1. Marcha Básica": [ {step: 0, f: 'R', t: 'Step'}, {step: 4, f: 'L', t: 'Step'}, {step: 8, f: 'R', t: 'Step'}, {step: 12, f: 'L', t: 'Step'}, {step: 16, f: 'R', t: 'Step'}, {step: 20, f: 'L', t: 'Step'}, {step: 24, f: 'R', t: 'Step'}, {step: 28, f: 'L', t: 'Step'} ],
+    "2. Caminhada (Frente/Trás)": [ {step: 0, f: 'RPos', t: 'F'}, {step: 0, f: 'R', t: 'Step'}, {step: 4, f: 'LPos', t: 'F'}, {step: 4, f: 'L', t: 'Step'}, {step: 8, f: 'RPos', t: 'C'}, {step: 8, f: 'R', t: 'Step'}, {step: 12, f: 'LPos', t: 'C'}, {step: 12, f: 'L', t: 'Step'}, {step: 16, f: 'RPos', t: 'B'}, {step: 16, f: 'R', t: 'Step'}, {step: 20, f: 'LPos', t: 'B'}, {step: 20, f: 'L', t: 'Step'}, {step: 24, f: 'RPos', t: 'C'}, {step: 24, f: 'R', t: 'Step'}, {step: 28, f: 'LPos', t: 'C'}, {step: 28, f: 'L', t: 'Step'} ],
+    "3. Shuffle Cruzado": [ {step: 0, f: 'RPos', t: 'X'}, {step: 0, f: 'R', t: 'Shuffle'}, {step: 2, f: 'RPos', t: 'C'}, {step: 2, f: 'R', t: 'Step'}, {step: 4, f: 'LPos', t: 'X'}, {step: 4, f: 'L', t: 'Shuffle'}, {step: 6, f: 'LPos', t: 'C'}, {step: 6, f: 'L', t: 'Step'}, {step: 8, f: 'RPos', t: 'X'}, {step: 8, f: 'R', t: 'Shuffle'}, {step: 10, f: 'RPos', t: 'C'}, {step: 10, f: 'R', t: 'Step'}, {step: 12, f: 'LPos', t: 'X'}, {step: 12, f: 'L', t: 'Shuffle'}, {step: 14, f: 'LPos', t: 'C'}, {step: 14, f: 'L', t: 'Step'}, {step: 16, f: 'RPos', t: 'X'}, {step: 16, f: 'R', t: 'Shuffle'}, {step: 18, f: 'RPos', t: 'C'}, {step: 18, f: 'R', t: 'Step'}, {step: 20, f: 'LPos', t: 'X'}, {step: 20, f: 'L', t: 'Shuffle'}, {step: 22, f: 'LPos', t: 'C'}, {step: 22, f: 'L', t: 'Step'}, {step: 24, f: 'RPos', t: 'X'}, {step: 24, f: 'R', t: 'Shuffle'}, {step: 26, f: 'RPos', t: 'C'}, {step: 26, f: 'R', t: 'Step'}, {step: 28, f: 'LPos', t: 'X'}, {step: 28, f: 'L', t: 'Shuffle'}, {step: 30, f: 'LPos', t: 'C'}, {step: 30, f: 'L', t: 'Step'} ],
+    "4. Cramp Roll": [ {step: 0, f: 'R', t: 'Ball'}, {step: 1, f: 'L', t: 'Ball'}, {step: 2, f: 'R', t: 'Heel'}, {step: 3, f: 'L', t: 'Heel'}, {step: 8, f: 'L', t: 'Ball'}, {step: 9, f: 'R', t: 'Ball'}, {step: 10, f: 'L', t: 'Heel'}, {step: 11, f: 'R', t: 'Heel'}, {step: 16, f: 'R', t: 'Ball'}, {step: 17, f: 'L', t: 'Ball'}, {step: 18, f: 'R', t: 'Heel'}, {step: 19, f: 'L', t: 'Heel'}, {step: 24, f: 'L', t: 'Ball'}, {step: 25, f: 'R', t: 'Ball'}, {step: 26, f: 'L', t: 'Heel'}, {step: 27, f: 'R', t: 'Heel'} ],
+    "5. Paradiddle Simples": [ {step: 0, f: 'R', t: 'Heel'}, {step: 1, f: 'R', t: 'Step'}, {step: 2, f: 'R', t: 'Toe'}, {step: 3, f: 'R', t: 'Heel'}, {step: 4, f: 'L', t: 'Heel'}, {step: 5, f: 'L', t: 'Step'}, {step: 6, f: 'L', t: 'Toe'}, {step: 7, f: 'L', t: 'Heel'}, {step: 8, f: 'R', t: 'Heel'}, {step: 9, f: 'R', t: 'Step'}, {step: 10, f: 'R', t: 'Toe'}, {step: 11, f: 'R', t: 'Heel'}, {step: 12, f: 'L', t: 'Heel'}, {step: 13, f: 'L', t: 'Step'}, {step: 14, f: 'L', t: 'Toe'}, {step: 15, f: 'L', t: 'Heel'}, {step: 16, f: 'R', t: 'Heel'}, {step: 17, f: 'R', t: 'Step'}, {step: 18, f: 'R', t: 'Toe'}, {step: 19, f: 'R', t: 'Heel'}, {step: 20, f: 'L', t: 'Heel'}, {step: 21, f: 'L', t: 'Step'}, {step: 22, f: 'L', t: 'Toe'}, {step: 23, f: 'L', t: 'Heel'}, {step: 24, f: 'R', t: 'Heel'}, {step: 25, f: 'R', t: 'Step'}, {step: 26, f: 'R', t: 'Toe'}, {step: 27, f: 'R', t: 'Heel'}, {step: 28, f: 'L', t: 'Heel'}, {step: 29, f: 'L', t: 'Step'}, {step: 30, f: 'L', t: 'Toe'}, {step: 31, f: 'L', t: 'Heel'} ],
+    "6. Waltz Clog": [ {step: 0, f: 'RPos', t: 'C'}, {step: 0, f: 'R', t: 'Step'}, {step: 2, f: 'LPos', t: 'F'}, {step: 2, f: 'L', t: 'Shuffle'}, {step: 4, f: 'LPos', t: 'C'}, {step: 4, f: 'L', t: 'Ball'}, {step: 6, f: 'R', t: 'Ball'}, {step: 8, f: 'LPos', t: 'C'}, {step: 8, f: 'L', t: 'Step'}, {step: 10, f: 'RPos', t: 'F'}, {step: 10, f: 'R', t: 'Shuffle'}, {step: 12, f: 'RPos', t: 'C'}, {step: 12, f: 'R', t: 'Ball'}, {step: 14, f: 'L', t: 'Ball'}, {step: 16, f: 'RPos', t: 'C'}, {step: 16, f: 'R', t: 'Step'}, {step: 18, f: 'LPos', t: 'F'}, {step: 18, f: 'L', t: 'Shuffle'}, {step: 20, f: 'LPos', t: 'C'}, {step: 20, f: 'L', t: 'Ball'}, {step: 22, f: 'R', t: 'Ball'}, {step: 24, f: 'LPos', t: 'C'}, {step: 24, f: 'L', t: 'Step'}, {step: 26, f: 'RPos', t: 'F'}, {step: 26, f: 'R', t: 'Shuffle'}, {step: 28, f: 'RPos', t: 'C'}, {step: 28, f: 'R', t: 'Ball'}, {step: 30, f: 'L', t: 'Ball'} ],
+    "7. Shim Sham Básico": [ {step: 0, f: 'RPos', t: 'F'}, {step: 0, f: 'R', t: 'Shuffle'}, {step: 2, f: 'RPos', t: 'C'}, {step: 2, f: 'R', t: 'Step'}, {step: 4, f: 'LPos', t: 'F'}, {step: 4, f: 'L', t: 'Shuffle'}, {step: 6, f: 'LPos', t: 'C'}, {step: 6, f: 'L', t: 'Step'}, {step: 8, f: 'RPos', t: 'F'}, {step: 8, f: 'R', t: 'Shuffle'}, {step: 10, f: 'RPos', t: 'C'}, {step: 10, f: 'R', t: 'Ball'}, {step: 12, f: 'L', t: 'Step'}, {step: 14, f: 'R', t: 'Step'}, {step: 16, f: 'LPos', t: 'F'}, {step: 16, f: 'L', t: 'Shuffle'}, {step: 18, f: 'LPos', t: 'C'}, {step: 18, f: 'L', t: 'Step'}, {step: 20, f: 'RPos', t: 'F'}, {step: 20, f: 'R', t: 'Shuffle'}, {step: 22, f: 'RPos', t: 'C'}, {step: 22, f: 'R', t: 'Step'}, {step: 24, f: 'LPos', t: 'F'}, {step: 24, f: 'L', t: 'Shuffle'}, {step: 26, f: 'LPos', t: 'C'}, {step: 26, f: 'L', t: 'Ball'}, {step: 28, f: 'R', t: 'Step'}, {step: 30, f: 'L', t: 'Step'} ],
+    "8. Time Step Iniciante": [ {step: 0, f: 'R', t: 'Stomp'}, {step: 2, f: 'LPos', t: 'C'}, {step: 2, f: 'L', t: 'Step'}, {step: 4, f: 'RPos', t: 'B'}, {step: 4, f: 'R', t: 'Step'}, {step: 6, f: 'LPos', t: 'F'}, {step: 6, f: 'L', t: 'Ball'}, {step: 8, f: 'LPos', t: 'C'}, {step: 8, f: 'L', t: 'Step'}, {step: 10, f: 'RPos', t: 'C'}, {step: 10, f: 'R', t: 'Step'}, {step: 16, f: 'L', t: 'Stomp'}, {step: 18, f: 'RPos', t: 'C'}, {step: 18, f: 'R', t: 'Step'}, {step: 20, f: 'LPos', t: 'B'}, {step: 20, f: 'L', t: 'Step'}, {step: 22, f: 'RPos', t: 'F'}, {step: 22, f: 'R', t: 'Ball'}, {step: 24, f: 'RPos', t: 'C'}, {step: 24, f: 'R', t: 'Step'}, {step: 26, f: 'LPos', t: 'C'}, {step: 26, f: 'L', t: 'Step'} ],
+    "9. Maxi Ford": [ {step: 0, f: 'RPos', t: 'C'}, {step: 0, f: 'R', t: 'Step'}, {step: 2, f: 'LPos', t: 'L'}, {step: 2, f: 'L', t: 'Shuffle'}, {step: 4, f: 'RPos', t: 'B'}, {step: 4, f: 'R', t: 'Step'}, {step: 6, f: 'LPos', t: 'X'}, {step: 6, f: 'L', t: 'Toe'}, {step: 8, f: 'LPos', t: 'C'}, {step: 8, f: 'L', t: 'Step'}, {step: 10, f: 'RPos', t: 'R'}, {step: 10, f: 'R', t: 'Shuffle'}, {step: 12, f: 'LPos', t: 'B'}, {step: 12, f: 'L', t: 'Step'}, {step: 14, f: 'RPos', t: 'X'}, {step: 14, f: 'R', t: 'Toe'}, {step: 16, f: 'RPos', t: 'C'}, {step: 16, f: 'R', t: 'Step'}, {step: 18, f: 'LPos', t: 'L'}, {step: 18, f: 'L', t: 'Shuffle'}, {step: 20, f: 'RPos', t: 'B'}, {step: 20, f: 'R', t: 'Step'}, {step: 22, f: 'LPos', t: 'X'}, {step: 22, f: 'L', t: 'Toe'}, {step: 24, f: 'LPos', t: 'C'}, {step: 24, f: 'L', t: 'Step'}, {step: 26, f: 'RPos', t: 'R'}, {step: 26, f: 'R', t: 'Shuffle'}, {step: 28, f: 'LPos', t: 'B'}, {step: 28, f: 'L', t: 'Step'}, {step: 30, f: 'RPos', t: 'X'}, {step: 30, f: 'R', t: 'Toe'} ],
+    "10. Drawback Contínuo": [ {step: 0, f: 'RPos', t: 'B'}, {step: 0, f: 'R', t: 'Step'}, {step: 1, f: 'L', t: 'Heel'}, {step: 2, f: 'LPos', t: 'B'}, {step: 2, f: 'L', t: 'Step'}, {step: 3, f: 'R', t: 'Heel'}, {step: 4, f: 'RPos', t: 'B'}, {step: 4, f: 'R', t: 'Step'}, {step: 5, f: 'L', t: 'Heel'}, {step: 6, f: 'LPos', t: 'B'}, {step: 6, f: 'L', t: 'Step'}, {step: 7, f: 'R', t: 'Heel'}, {step: 8, f: 'RPos', t: 'B'}, {step: 8, f: 'R', t: 'Step'}, {step: 9, f: 'L', t: 'Heel'}, {step: 10, f: 'LPos', t: 'B'}, {step: 10, f: 'L', t: 'Step'}, {step: 11, f: 'R', t: 'Heel'}, {step: 12, f: 'RPos', t: 'B'}, {step: 12, f: 'R', t: 'Step'}, {step: 13, f: 'L', t: 'Heel'}, {step: 14, f: 'LPos', t: 'B'}, {step: 14, f: 'L', t: 'Step'}, {step: 15, f: 'R', t: 'Heel'}, {step: 16, f: 'RPos', t: 'B'}, {step: 16, f: 'R', t: 'Step'}, {step: 17, f: 'L', t: 'Heel'}, {step: 18, f: 'LPos', t: 'B'}, {step: 18, f: 'L', t: 'Step'}, {step: 19, f: 'R', t: 'Heel'}, {step: 20, f: 'RPos', t: 'B'}, {step: 20, f: 'R', t: 'Step'}, {step: 21, f: 'L', t: 'Heel'}, {step: 22, f: 'LPos', t: 'B'}, {step: 22, f: 'L', t: 'Step'}, {step: 23, f: 'R', t: 'Heel'}, {step: 24, f: 'RPos', t: 'B'}, {step: 24, f: 'R', t: 'Step'}, {step: 25, f: 'L', t: 'Heel'}, {step: 26, f: 'LPos', t: 'B'}, {step: 26, f: 'L', t: 'Step'}, {step: 27, f: 'R', t: 'Heel'}, {step: 28, f: 'RPos', t: 'B'}, {step: 28, f: 'R', t: 'Step'}, {step: 29, f: 'L', t: 'Heel'}, {step: 30, f: 'LPos', t: 'B'}, {step: 30, f: 'L', t: 'Step'}, {step: 31, f: 'R', t: 'Heel'} ],
+    "11. Shirley Temple": [ {step: 0, f: 'RPos', t: 'F'}, {step: 0, f: 'R', t: 'Ball'}, {step: 1, f: 'RPos', t: 'C'}, {step: 1, f: 'R', t: 'Heel'}, {step: 2, f: 'L', t: 'Heel'}, {step: 3, f: 'R', t: 'Heel'}, {step: 4, f: 'LPos', t: 'B'}, {step: 4, f: 'L', t: 'Toe'}, {step: 5, f: 'R', t: 'Heel'}, {step: 6, f: 'LPos', t: 'B'}, {step: 6, f: 'L', t: 'Toe'}, {step: 7, f: 'R', t: 'Heel'}, {step: 8, f: 'LPos', t: 'F'}, {step: 8, f: 'L', t: 'Ball'}, {step: 9, f: 'LPos', t: 'C'}, {step: 9, f: 'L', t: 'Heel'}, {step: 10, f: 'R', t: 'Heel'}, {step: 11, f: 'L', t: 'Heel'}, {step: 12, f: 'RPos', t: 'B'}, {step: 12, f: 'R', t: 'Toe'}, {step: 13, f: 'L', t: 'Heel'}, {step: 14, f: 'RPos', t: 'B'}, {step: 14, f: 'R', t: 'Toe'}, {step: 15, f: 'L', t: 'Heel'}, {step: 16, f: 'RPos', t: 'F'}, {step: 16, f: 'R', t: 'Ball'}, {step: 17, f: 'RPos', t: 'C'}, {step: 17, f: 'R', t: 'Heel'}, {step: 18, f: 'L', t: 'Heel'}, {step: 19, f: 'R', t: 'Heel'}, {step: 20, f: 'LPos', t: 'B'}, {step: 20, f: 'L', t: 'Toe'}, {step: 21, f: 'R', t: 'Heel'}, {step: 22, f: 'LPos', t: 'B'}, {step: 22, f: 'L', t: 'Toe'}, {step: 23, f: 'R', t: 'Heel'}, {step: 24, f: 'LPos', t: 'F'}, {step: 24, f: 'L', t: 'Ball'}, {step: 25, f: 'LPos', t: 'C'}, {step: 25, f: 'L', t: 'Heel'}, {step: 26, f: 'R', t: 'Heel'}, {step: 27, f: 'L', t: 'Heel'}, {step: 28, f: 'RPos', t: 'B'}, {step: 28, f: 'R', t: 'Toe'}, {step: 29, f: 'L', t: 'Heel'}, {step: 30, f: 'RPos', t: 'B'}, {step: 30, f: 'R', t: 'Toe'}, {step: 31, f: 'L', t: 'Heel'} ],
+    "12. Buffalo": [ {step: 0, f: 'RPos', t: 'X'}, {step: 0, f: 'R', t: 'Step'}, {step: 2, f: 'LPos', t: 'L'}, {step: 2, f: 'L', t: 'Shuffle'}, {step: 4, f: 'RPos', t: 'X'}, {step: 4, f: 'R', t: 'Step'}, {step: 8, f: 'LPos', t: 'X'}, {step: 8, f: 'L', t: 'Step'}, {step: 10, f: 'RPos', t: 'R'}, {step: 10, f: 'R', t: 'Shuffle'}, {step: 12, f: 'LPos', t: 'X'}, {step: 12, f: 'L', t: 'Step'}, {step: 16, f: 'RPos', t: 'X'}, {step: 16, f: 'R', t: 'Step'}, {step: 18, f: 'LPos', t: 'L'}, {step: 18, f: 'L', t: 'Shuffle'}, {step: 20, f: 'RPos', t: 'X'}, {step: 20, f: 'R', t: 'Step'}, {step: 24, f: 'LPos', t: 'X'}, {step: 24, f: 'L', t: 'Step'}, {step: 26, f: 'RPos', t: 'R'}, {step: 26, f: 'R', t: 'Shuffle'}, {step: 28, f: 'LPos', t: 'X'}, {step: 28, f: 'L', t: 'Step'} ],
+    "13. Irish": [ {step: 0, f: 'RPos', t: 'F'}, {step: 0, f: 'R', t: 'Shuffle'}, {step: 2, f: 'LPos', t: 'C'}, {step: 2, f: 'L', t: 'Step'}, {step: 4, f: 'RPos', t: 'X'}, {step: 4, f: 'R', t: 'Step'}, {step: 8, f: 'LPos', t: 'F'}, {step: 8, f: 'L', t: 'Shuffle'}, {step: 10, f: 'RPos', t: 'C'}, {step: 10, f: 'R', t: 'Step'}, {step: 12, f: 'LPos', t: 'X'}, {step: 12, f: 'L', t: 'Step'}, {step: 16, f: 'RPos', t: 'F'}, {step: 16, f: 'R', t: 'Shuffle'}, {step: 18, f: 'LPos', t: 'C'}, {step: 18, f: 'L', t: 'Step'}, {step: 20, f: 'RPos', t: 'X'}, {step: 20, f: 'R', t: 'Step'}, {step: 24, f: 'LPos', t: 'F'}, {step: 24, f: 'L', t: 'Shuffle'}, {step: 26, f: 'RPos', t: 'C'}, {step: 26, f: 'R', t: 'Step'}, {step: 28, f: 'LPos', t: 'X'}, {step: 28, f: 'L', t: 'Step'} ],
+    "14. Cincinnati": [ {step: 0, f: 'RPos', t: 'B'}, {step: 0, f: 'R', t: 'Step'}, {step: 2, f: 'LPos', t: 'F'}, {step: 2, f: 'L', t: 'Shuffle'}, {step: 4, f: 'R', t: 'Heel'}, {step: 6, f: 'LPos', t: 'B'}, {step: 6, f: 'L', t: 'Step'}, {step: 8, f: 'RPos', t: 'F'}, {step: 8, f: 'R', t: 'Shuffle'}, {step: 10, f: 'L', t: 'Heel'}, {step: 12, f: 'RPos', t: 'B'}, {step: 12, f: 'R', t: 'Step'}, {step: 14, f: 'LPos', t: 'F'}, {step: 14, f: 'L', t: 'Shuffle'}, {step: 16, f: 'R', t: 'Heel'}, {step: 18, f: 'LPos', t: 'B'}, {step: 18, f: 'L', t: 'Step'}, {step: 20, f: 'RPos', t: 'F'}, {step: 20, f: 'R', t: 'Shuffle'}, {step: 22, f: 'L', t: 'Heel'}, {step: 24, f: 'RPos', t: 'B'}, {step: 24, f: 'R', t: 'Step'}, {step: 26, f: 'LPos', t: 'F'}, {step: 26, f: 'L', t: 'Shuffle'}, {step: 28, f: 'R', t: 'Heel'}, {step: 30, f: 'LPos', t: 'B'}, {step: 30, f: 'L', t: 'Step'} ],
+    "15. Bombershay": [ {step: 0, f: 'RPos', t: 'C'}, {step: 0, f: 'R', t: 'Step'}, {step: 2, f: 'LPos', t: 'L'}, {step: 2, f: 'L', t: 'Toe'}, {step: 4, f: 'R', t: 'Heel'}, {step: 6, f: 'LPos', t: 'C'}, {step: 6, f: 'L', t: 'Step'}, {step: 8, f: 'RPos', t: 'R'}, {step: 8, f: 'R', t: 'Toe'}, {step: 10, f: 'L', t: 'Heel'}, {step: 12, f: 'RPos', t: 'C'}, {step: 12, f: 'R', t: 'Step'}, {step: 14, f: 'LPos', t: 'L'}, {step: 14, f: 'L', t: 'Toe'}, {step: 16, f: 'R', t: 'Heel'}, {step: 18, f: 'LPos', t: 'C'}, {step: 18, f: 'L', t: 'Step'}, {step: 20, f: 'RPos', t: 'R'}, {step: 20, f: 'R', t: 'Toe'}, {step: 22, f: 'L', t: 'Heel'}, {step: 24, f: 'RPos', t: 'C'}, {step: 24, f: 'R', t: 'Step'}, {step: 26, f: 'LPos', t: 'L'}, {step: 26, f: 'L', t: 'Toe'}, {step: 28, f: 'R', t: 'Heel'}, {step: 30, f: 'LPos', t: 'C'}, {step: 30, f: 'L', t: 'Step'} ],
+    "16. Paddle and Roll": [ {step: 0, f: 'R', t: 'Heel'}, {step: 1, f: 'RPos', t: 'B'}, {step: 1, f: 'R', t: 'Step'}, {step: 2, f: 'LPos', t: 'F'}, {step: 2, f: 'L', t: 'Ball'}, {step: 3, f: 'LPos', t: 'C'}, {step: 3, f: 'L', t: 'Heel'}, {step: 4, f: 'R', t: 'Heel'}, {step: 5, f: 'RPos', t: 'B'}, {step: 5, f: 'R', t: 'Step'}, {step: 6, f: 'LPos', t: 'F'}, {step: 6, f: 'L', t: 'Ball'}, {step: 7, f: 'LPos', t: 'C'}, {step: 7, f: 'L', t: 'Heel'}, {step: 8, f: 'R', t: 'Heel'}, {step: 9, f: 'RPos', t: 'B'}, {step: 9, f: 'R', t: 'Step'}, {step: 10, f: 'LPos', t: 'F'}, {step: 10, f: 'L', t: 'Ball'}, {step: 11, f: 'LPos', t: 'C'}, {step: 11, f: 'L', t: 'Heel'}, {step: 12, f: 'R', t: 'Heel'}, {step: 13, f: 'RPos', t: 'B'}, {step: 13, f: 'R', t: 'Step'}, {step: 14, f: 'LPos', t: 'F'}, {step: 14, f: 'L', t: 'Ball'}, {step: 15, f: 'LPos', t: 'C'}, {step: 15, f: 'L', t: 'Heel'}, {step: 16, f: 'R', t: 'Heel'}, {step: 17, f: 'RPos', t: 'B'}, {step: 17, f: 'R', t: 'Step'}, {step: 18, f: 'LPos', t: 'F'}, {step: 18, f: 'L', t: 'Ball'}, {step: 19, f: 'LPos', t: 'C'}, {step: 19, f: 'L', t: 'Heel'}, {step: 20, f: 'R', t: 'Heel'}, {step: 21, f: 'RPos', t: 'B'}, {step: 21, f: 'R', t: 'Step'}, {step: 22, f: 'LPos', t: 'F'}, {step: 22, f: 'L', t: 'Ball'}, {step: 23, f: 'LPos', t: 'C'}, {step: 23, f: 'L', t: 'Heel'}, {step: 24, f: 'R', t: 'Heel'}, {step: 25, f: 'RPos', t: 'B'}, {step: 25, f: 'R', t: 'Step'}, {step: 26, f: 'LPos', t: 'F'}, {step: 26, f: 'L', t: 'Ball'}, {step: 27, f: 'LPos', t: 'C'}, {step: 27, f: 'L', t: 'Heel'}, {step: 28, f: 'R', t: 'Heel'}, {step: 29, f: 'RPos', t: 'B'}, {step: 29, f: 'R', t: 'Step'}, {step: 30, f: 'LPos', t: 'F'}, {step: 30, f: 'L', t: 'Ball'}, {step: 31, f: 'LPos', t: 'C'}, {step: 31, f: 'L', t: 'Heel'} ],
+    "17. Suzi Q": [ {step: 0, f: 'RPos', t: 'X'}, {step: 0, f: 'R', t: 'Step'}, {step: 2, f: 'LPos', t: 'L'}, {step: 2, f: 'L', t: 'Heel'}, {step: 4, f: 'RPos', t: 'X'}, {step: 4, f: 'R', t: 'Step'}, {step: 6, f: 'LPos', t: 'L'}, {step: 6, f: 'L', t: 'Heel'}, {step: 8, f: 'RPos', t: 'X'}, {step: 8, f: 'R', t: 'Step'}, {step: 10, f: 'LPos', t: 'L'}, {step: 10, f: 'L', t: 'Heel'}, {step: 12, f: 'RPos', t: 'X'}, {step: 12, f: 'R', t: 'Step'}, {step: 14, f: 'LPos', t: 'L'}, {step: 14, f: 'L', t: 'Heel'}, {step: 16, f: 'LPos', t: 'X'}, {step: 16, f: 'L', t: 'Step'}, {step: 18, f: 'RPos', t: 'R'}, {step: 18, f: 'R', t: 'Heel'}, {step: 20, f: 'LPos', t: 'X'}, {step: 20, f: 'L', t: 'Step'}, {step: 22, f: 'RPos', t: 'R'}, {step: 22, f: 'R', t: 'Heel'}, {step: 24, f: 'LPos', t: 'X'}, {step: 24, f: 'L', t: 'Step'}, {step: 26, f: 'RPos', t: 'R'}, {step: 26, f: 'R', t: 'Heel'}, {step: 28, f: 'LPos', t: 'X'}, {step: 28, f: 'L', t: 'Step'}, {step: 30, f: 'RPos', t: 'R'}, {step: 30, f: 'R', t: 'Heel'} ],
+    "18. Broadways": [ {step: 0, f: 'RPos', t: 'F'}, {step: 0, f: 'R', t: 'Ball'}, {step: 1, f: 'RPos', t: 'C'}, {step: 1, f: 'R', t: 'Heel'}, {step: 2, f: 'L', t: 'Heel'}, {step: 3, f: 'LPos', t: 'F'}, {step: 3, f: 'L', t: 'Ball'}, {step: 4, f: 'LPos', t: 'C'}, {step: 4, f: 'L', t: 'Heel'}, {step: 5, f: 'R', t: 'Heel'}, {step: 8, f: 'RPos', t: 'F'}, {step: 8, f: 'R', t: 'Ball'}, {step: 9, f: 'RPos', t: 'C'}, {step: 9, f: 'R', t: 'Heel'}, {step: 10, f: 'L', t: 'Heel'}, {step: 11, f: 'LPos', t: 'F'}, {step: 11, f: 'L', t: 'Ball'}, {step: 12, f: 'LPos', t: 'C'}, {step: 12, f: 'L', t: 'Heel'}, {step: 13, f: 'R', t: 'Heel'}, {step: 16, f: 'RPos', t: 'F'}, {step: 16, f: 'R', t: 'Ball'}, {step: 17, f: 'RPos', t: 'C'}, {step: 17, f: 'R', t: 'Heel'}, {step: 18, f: 'L', t: 'Heel'}, {step: 19, f: 'LPos', t: 'F'}, {step: 19, f: 'L', t: 'Ball'}, {step: 20, f: 'LPos', t: 'C'}, {step: 20, f: 'L', t: 'Heel'}, {step: 21, f: 'R', t: 'Heel'}, {step: 24, f: 'RPos', t: 'F'}, {step: 24, f: 'R', t: 'Ball'}, {step: 25, f: 'RPos', t: 'C'}, {step: 25, f: 'R', t: 'Heel'}, {step: 26, f: 'L', t: 'Heel'}, {step: 27, f: 'LPos', t: 'F'}, {step: 27, f: 'L', t: 'Ball'}, {step: 28, f: 'LPos', t: 'C'}, {step: 28, f: 'L', t: 'Heel'}, {step: 29, f: 'R', t: 'Heel'} ],
+    "19. Riff Walk": [ {step: 0, f: 'RPos', t: 'F'}, {step: 0, f: 'R', t: 'Toe'}, {step: 1, f: 'RPos', t: 'C'}, {step: 1, f: 'R', t: 'Heel'}, {step: 2, f: 'L', t: 'Heel'}, {step: 4, f: 'LPos', t: 'F'}, {step: 4, f: 'L', t: 'Toe'}, {step: 5, f: 'LPos', t: 'C'}, {step: 5, f: 'L', t: 'Heel'}, {step: 6, f: 'R', t: 'Heel'}, {step: 8, f: 'RPos', t: 'F'}, {step: 8, f: 'R', t: 'Toe'}, {step: 9, f: 'RPos', t: 'C'}, {step: 9, f: 'R', t: 'Heel'}, {step: 10, f: 'L', t: 'Heel'}, {step: 12, f: 'LPos', t: 'F'}, {step: 12, f: 'L', t: 'Toe'}, {step: 13, f: 'LPos', t: 'C'}, {step: 13, f: 'L', t: 'Heel'}, {step: 14, f: 'R', t: 'Heel'}, {step: 16, f: 'RPos', t: 'F'}, {step: 16, f: 'R', t: 'Toe'}, {step: 17, f: 'RPos', t: 'C'}, {step: 17, f: 'R', t: 'Heel'}, {step: 18, f: 'L', t: 'Heel'}, {step: 20, f: 'LPos', t: 'F'}, {step: 20, f: 'L', t: 'Toe'}, {step: 21, f: 'LPos', t: 'C'}, {step: 21, f: 'L', t: 'Heel'}, {step: 22, f: 'R', t: 'Heel'}, {step: 24, f: 'RPos', t: 'F'}, {step: 24, f: 'R', t: 'Toe'}, {step: 25, f: 'RPos', t: 'C'}, {step: 25, f: 'R', t: 'Heel'}, {step: 26, f: 'L', t: 'Heel'}, {step: 28, f: 'LPos', t: 'F'}, {step: 28, f: 'L', t: 'Toe'}, {step: 29, f: 'LPos', t: 'C'}, {step: 29, f: 'L', t: 'Heel'}, {step: 30, f: 'R', t: 'Heel'} ],
+    "20. Essence Básica": [ {step: 0, f: 'R', t: 'Step'}, {step: 2, f: 'LPos', t: 'X'}, {step: 2, f: 'L', t: 'Ball'}, {step: 4, f: 'R', t: 'Step'}, {step: 8, f: 'L', t: 'Step'}, {step: 10, f: 'RPos', t: 'X'}, {step: 10, f: 'R', t: 'Ball'}, {step: 12, f: 'L', t: 'Step'}, {step: 16, f: 'R', t: 'Step'}, {step: 18, f: 'LPos', t: 'X'}, {step: 18, f: 'L', t: 'Ball'}, {step: 20, f: 'R', t: 'Step'}, {step: 24, f: 'L', t: 'Step'}, {step: 26, f: 'RPos', t: 'X'}, {step: 26, f: 'R', t: 'Ball'}, {step: 28, f: 'L', t: 'Step'} ],
+    "21. Front Irish": [ {step: 0, f: 'RPos', t: 'F'}, {step: 0, f: 'R', t: 'Shuffle'}, {step: 3, f: 'R', t: 'Step'}, {step: 4, f: 'LPos', t: 'F'}, {step: 4, f: 'L', t: 'Shuffle'}, {step: 7, f: 'L', t: 'Step'}, {step: 8, f: 'RPos', t: 'F'}, {step: 8, f: 'R', t: 'Shuffle'}, {step: 11, f: 'R', t: 'Step'}, {step: 12, f: 'LPos', t: 'F'}, {step: 12, f: 'L', t: 'Shuffle'}, {step: 15, f: 'L', t: 'Step'}, {step: 16, f: 'RPos', t: 'F'}, {step: 16, f: 'R', t: 'Shuffle'}, {step: 19, f: 'R', t: 'Step'}, {step: 20, f: 'LPos', t: 'F'}, {step: 20, f: 'L', t: 'Shuffle'}, {step: 23, f: 'L', t: 'Step'}, {step: 24, f: 'RPos', t: 'F'}, {step: 24, f: 'R', t: 'Shuffle'}, {step: 27, f: 'R', t: 'Step'}, {step: 28, f: 'LPos', t: 'F'}, {step: 28, f: 'L', t: 'Shuffle'}, {step: 31, f: 'L', t: 'Step'} ],
+    "22. Grapevine": [ {step: 0, f: 'RPos', t: 'R'}, {step: 0, f: 'R', t: 'Step'}, {step: 4, f: 'LPos', t: 'X'}, {step: 4, f: 'L', t: 'Step'}, {step: 8, f: 'RPos', t: 'R'}, {step: 8, f: 'R', t: 'Step'}, {step: 12, f: 'LPos', t: 'F'}, {step: 12, f: 'L', t: 'Step'}, {step: 16, f: 'RPos', t: 'R'}, {step: 16, f: 'R', t: 'Step'}, {step: 20, f: 'LPos', t: 'X'}, {step: 20, f: 'L', t: 'Step'}, {step: 24, f: 'RPos', t: 'R'}, {step: 24, f: 'R', t: 'Step'}, {step: 28, f: 'LPos', t: 'F'}, {step: 28, f: 'L', t: 'Step'} ],
+    "23. Trenches": [ {step: 0, f: 'RPos', t: 'B'}, {step: 0, f: 'R', t: 'Stomp'}, {step: 4, f: 'LPos', t: 'B'}, {step: 4, f: 'L', t: 'Stomp'}, {step: 8, f: 'RPos', t: 'B'}, {step: 8, f: 'R', t: 'Stomp'}, {step: 12, f: 'LPos', t: 'B'}, {step: 12, f: 'L', t: 'Stomp'}, {step: 16, f: 'RPos', t: 'B'}, {step: 16, f: 'R', t: 'Stomp'}, {step: 20, f: 'LPos', t: 'B'}, {step: 20, f: 'L', t: 'Stomp'}, {step: 24, f: 'RPos', t: 'B'}, {step: 24, f: 'R', t: 'Stomp'}, {step: 28, f: 'LPos', t: 'B'}, {step: 28, f: 'L', t: 'Stomp'} ],
+    "24. Heel Stand Combo": [ {step: 0, f: 'R', t: 'Step'}, {step: 2, f: 'L', t: 'Step'}, {step: 4, f: 'RPos', t: 'F'}, {step: 4, f: 'R', t: 'Heel'}, {step: 6, f: 'LPos', t: 'F'}, {step: 6, f: 'L', t: 'Heel'}, {step: 8, f: 'R', t: 'Toe'}, {step: 10, f: 'L', t: 'Toe'}, {step: 16, f: 'L', t: 'Step'}, {step: 18, f: 'R', t: 'Step'}, {step: 20, f: 'LPos', t: 'F'}, {step: 20, f: 'L', t: 'Heel'}, {step: 22, f: 'RPos', t: 'F'}, {step: 22, f: 'R', t: 'Heel'}, {step: 24, f: 'L', t: 'Toe'}, {step: 26, f: 'R', t: 'Toe'} ],
+    "25. Military March": [ {step: 0, f: 'R', t: 'Stomp'}, {step: 2, f: 'L', t: 'Heel'}, {step: 4, f: 'R', t: 'Heel'}, {step: 6, f: 'L', t: 'Step'}, {step: 8, f: 'R', t: 'Step'}, {step: 16, f: 'L', t: 'Stomp'}, {step: 18, f: 'R', t: 'Heel'}, {step: 20, f: 'L', t: 'Heel'}, {step: 22, f: 'R', t: 'Step'}, {step: 24, f: 'L', t: 'Step'} ],
+    "26. Syncopated Ball Change": [ {step: 0, f: 'RPos', t: 'B'}, {step: 0, f: 'R', t: 'Ball'}, {step: 2, f: 'LPos', t: 'F'}, {step: 2, f: 'L', t: 'Step'}, {step: 6, f: 'RPos', t: 'B'}, {step: 6, f: 'R', t: 'Ball'}, {step: 8, f: 'LPos', t: 'F'}, {step: 8, f: 'L', t: 'Step'}, {step: 16, f: 'LPos', t: 'B'}, {step: 16, f: 'L', t: 'Ball'}, {step: 18, f: 'RPos', t: 'F'}, {step: 18, f: 'R', t: 'Step'}, {step: 22, f: 'LPos', t: 'B'}, {step: 22, f: 'L', t: 'Ball'}, {step: 24, f: 'RPos', t: 'F'}, {step: 24, f: 'R', t: 'Step'} ],
+    "27. Cramp Roll Duplo": [ {step: 0, f: 'R', t: 'Ball'}, {step: 1, f: 'L', t: 'Ball'}, {step: 2, f: 'R', t: 'Heel'}, {step: 3, f: 'L', t: 'Heel'}, {step: 4, f: 'R', t: 'Ball'}, {step: 5, f: 'L', t: 'Ball'}, {step: 6, f: 'R', t: 'Heel'}, {step: 7, f: 'L', t: 'Heel'}, {step: 16, f: 'L', t: 'Ball'}, {step: 17, f: 'R', t: 'Ball'}, {step: 18, f: 'L', t: 'Heel'}, {step: 19, f: 'R', t: 'Heel'}, {step: 20, f: 'L', t: 'Ball'}, {step: 21, f: 'R', t: 'Ball'}, {step: 22, f: 'L', t: 'Heel'}, {step: 23, f: 'R', t: 'Heel'} ],
+    "28. Estrela Ampla": [ {step: 0, f: 'RPos', t: 'F'}, {step: 0, f: 'R', t: 'Stomp'}, {step: 4, f: 'LPos', t: 'B'}, {step: 4, f: 'L', t: 'Stomp'}, {step: 8, f: 'RPos', t: 'R'}, {step: 8, f: 'R', t: 'Stomp'}, {step: 12, f: 'LPos', t: 'L'}, {step: 12, f: 'L', t: 'Stomp'}, {step: 16, f: 'RPos', t: 'C'}, {step: 16, f: 'R', t: 'Stomp'}, {step: 20, f: 'LPos', t: 'C'}, {step: 20, f: 'L', t: 'Stomp'}, {step: 24, f: 'RPos', t: 'F'}, {step: 24, f: 'R', t: 'Stomp'}, {step: 28, f: 'LPos', t: 'F'}, {step: 28, f: 'L', t: 'Stomp'} ]
+};
+
+// --- ÁUDIO (Web Audio API) ---
+let audioCtx = null;
+let nextNoteTime = 0.0;
+let scheduleAheadTime = 0.1; 
+let lookahead = 25; 
+let timerID;
+
+function initAudio() {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+}
+
+function playTapSound(time, foot, type) {
+    if (!audioCtx) return;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    const filter = audioCtx.createBiquadFilter();
+
+    osc.connect(filter); filter.connect(gain); gain.connect(audioCtx.destination);
+
+    let freq = foot === 'R' ? 800 : 900;
+    let typeVal = osc.type = 'triangle';
+    let duration = 0.05;
+    
+    switch(type) {
+        case 'Toe': freq *= 1.5; duration = 0.03; filter.type = 'highpass'; filter.frequency.value = 2000; break;
+        case 'Heel': freq *= 0.5; duration = 0.06; filter.type = 'lowpass'; filter.frequency.value = 1000; break;
+        case 'Stomp': freq *= 0.4; duration = 0.1; typeVal = 'square'; gain.gain.setValueAtTime(1.5, time); break;
+        case 'Shuffle': duration = 0.08; break; 
+        case 'Ball': freq *= 1.2; duration = 0.04; break;
+    }
+
+    osc.frequency.setValueAtTime(freq, time);
+    if(type === 'Shuffle') {
+        osc.frequency.exponentialRampToValueAtTime(freq*0.8, time + duration/2);
+        osc.frequency.exponentialRampToValueAtTime(freq*1.2, time + duration);
+    } else {
+        osc.frequency.exponentialRampToValueAtTime(100, time + duration);
+    }
+
+    gain.gain.setValueAtTime(1, time);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + duration);
+    osc.start(time); osc.stop(time + duration);
+}
+
+function playMetronome(time, beatIndex) {
+    if (!audioCtx || !state.metronomeOn) return;
+    if (beatIndex % 4 !== 0) return;
+    
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.connect(gain); gain.connect(audioCtx.destination);
+    osc.frequency.value = (beatIndex % 16 === 0) ? 1200 : 800; 
+    gain.gain.setValueAtTime(0.5, time);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.05);
+    osc.start(time); osc.stop(time + 0.05);
+}
+
+function nextNote() {
+    const secondsPerStep = (60.0 / (state.bpm * state.speedMultiplier)) / 4; 
+    nextNoteTime += secondsPerStep;
+    state.currentStep++;
+    if (state.currentStep >= state.totalSteps) {
+        if(state.loopOn) state.currentStep = 0;
+        else stopPlayback();
+    }
+}
+
+function updateFootPosition(foot, posStr) {
+    const offsets = {
+        'C': {x: 0, z: 0},
+        'F': {x: 0, z: -40},  // Frente: Move-se na direção da ponta do pé (-Z)
+        'B': {x: 0, z: 40},   // Trás: Move-se na direção do calcanhar (+Z)
+        'L': {x: -30, z: 0},  
+        'R': {x: 30, z: 0},   
+        'X': {x: (foot === 'L' ? 40 : -40), z: -10} 
+    };
+    const base = foot === 'L' ? {x: -25, z: 0} : {x: 25, z: 0};
+    const off = offsets[posStr] || offsets['C'];
+    feetVisuals[foot].targetX = base.x + off.x;
+    feetVisuals[foot].targetZ = base.z + off.z;
+}
+
+function scheduleNote(stepNumber, time) {
+    playMetronome(time, stepNumber);
+    const stepData = state.sequence[stepNumber];
+    if (stepData.LPos) updateFootPosition('L', stepData.LPos);
+    if (stepData.RPos) updateFootPosition('R', stepData.RPos);
+
+    if (stepData.L) { playTapSound(time, 'L', stepData.L); triggerAnimation('L', stepData.L); }
+    if (stepData.R) { playTapSound(time, 'R', stepData.R); triggerAnimation('R', stepData.R); }
+
+    setTimeout(() => { updatePlayheadUI(stepNumber); }, Math.max(0, (time - audioCtx.currentTime) * 1000));
+}
+
+function scheduler() {
+    if (!state.isPlaying) return;
+    while (nextNoteTime < audioCtx.currentTime + scheduleAheadTime) {
+        scheduleNote(state.currentStep, nextNoteTime);
+        nextNote();
+        if(!state.isPlaying) break; 
+    }
+    timerID = window.setTimeout(scheduler, lookahead);
+}
+
+function togglePlayback() { initAudio(); state.isPlaying ? stopPlayback() : startPlayback(); }
+
+function startPlayback() {
+    state.isPlaying = true; state.currentStep = 0;
+    updateFootPosition('L', state.sequence[0].LPos || 'C');
+    updateFootPosition('R', state.sequence[0].RPos || 'C');
+    nextNoteTime = audioCtx.currentTime + 0.05;
+    document.getElementById('play-btn').textContent = '⏹ Stop';
+    document.getElementById('play-btn').classList.add('playing');
+    scheduler();
+}
+
+function stopPlayback() {
+    state.isPlaying = false; window.clearTimeout(timerID);
+    document.getElementById('play-btn').textContent = '▶ Play';
+    document.getElementById('play-btn').classList.remove('playing');
+    document.querySelectorAll('.time-cell').forEach(c => c.classList.remove('playing'));
+    document.getElementById('playhead').style.left = '55px'; 
+    state.currentStep = 0;
+}
+
+// --- INTERFACE (UI) ---
+function initUI() {
+    const header = document.getElementById('tl-header');
+    const rowLPos = document.getElementById('row-left-pos');
+    const rowL = document.getElementById('row-left');
+    const rowRPos = document.getElementById('row-right-pos');
+    const rowR = document.getElementById('row-right');
+
+    for (let i = 0; i < state.totalSteps; i++) {
+        if (i % 4 === 0) {
+            const beatMark = document.createElement('div');
+            beatMark.className = 'beat-marker'; beatMark.textContent = (i/4 + 1);
+            header.appendChild(beatMark);
+        }
+        [ {r: 'LPos', p: rowLPos}, {r: 'L', p: rowL}, {r: 'RPos', p: rowRPos}, {r: 'R', p: rowR} ].forEach(cfg => {
+            const cell = document.createElement('div');
+            cell.className = 'time-cell'; cell.dataset.col = i; cell.dataset.row = cfg.r;
+            setupCellEvents(cell); cfg.p.appendChild(cell);
+        });
+    }
+
+    document.querySelectorAll('.step-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            document.querySelectorAll('.step-btn').forEach(b => b.classList.remove('selected'));
+            let isSameTool = false;
+            if (state.selectedTool) {
+                isSameTool = (btn.dataset.type === 'Pos') ? 
+                    (state.selectedTool.isPos && state.selectedTool.val === btn.dataset.val) : 
+                    (!state.selectedTool.isPos && state.selectedTool.type === btn.dataset.type && state.selectedTool.foot === btn.dataset.foot);
+            }
+            if (isSameTool) { state.selectedTool = null; } 
+            else {
+                btn.classList.add('selected');
+                state.selectedTool = (btn.dataset.type === 'Pos') ? 
+                    { isPos: true, val: btn.dataset.val } : 
+                    { isPos: false, foot: btn.dataset.foot, type: btn.dataset.type };
+            }
+        });
+
+        btn.addEventListener('dragstart', (e) => {
+            state.draggedData = (btn.dataset.type === 'Pos') ? { isPos: true, val: btn.dataset.val } : { isPos: false, foot: btn.dataset.foot, type: btn.dataset.type };
+            e.dataTransfer.setData('text/plain', JSON.stringify(state.draggedData));
+            btn.click();
+        });
+    });
+
+    document.getElementById('play-btn').addEventListener('click', togglePlayback);
+    document.getElementById('clear-btn').addEventListener('click', () => {
+        if(confirm("Limpar toda a sequência?")) {
+            state.sequence = Array.from({ length: 32 }, () => ({ L: null, R: null, LPos: null, RPos: null }));
+            renderSequenceUI();
+        }
+    });
+
+    const bpmDisplay = document.getElementById('bpm-display');
+    document.getElementById('bpm-slider').addEventListener('input', (e) => { state.bpm = e.target.value; bpmDisplay.textContent = state.bpm; });
+    document.getElementById('speed-select').addEventListener('change', (e) => { state.speedMultiplier = parseFloat(e.target.value); });
+
+    const metroBtn = document.getElementById('metro-btn');
+    metroBtn.addEventListener('click', () => {
+        state.metronomeOn = !state.metronomeOn;
+        metroBtn.textContent = state.metronomeOn ? '🔔 Metrônomo: ON' : '🔕 Metrônomo: OFF';
+        metroBtn.style.background = state.metronomeOn ? '#ddd' : '#f9f9f9';
+    });
+
+    const loopBtn = document.getElementById('loop-btn');
+    loopBtn.addEventListener('click', () => {
+        state.loopOn = !state.loopOn;
+        loopBtn.textContent = state.loopOn ? '🔁 Loop: ON' : '➡️ Loop: OFF';
+        loopBtn.style.background = state.loopOn ? '#4caf50' : '#ddd';
+        loopBtn.style.color = state.loopOn ? 'white' : '#333';
+    });
+
+    document.getElementById('toggle-glossary-btn').addEventListener('click', toggleGlossary);
+    document.getElementById('presets-btn').addEventListener('click', showPresets);
+    document.getElementById('save-btn').addEventListener('click', showSaveMenu);
+    document.getElementById('modal-close').addEventListener('click', closeModal);
+}
+
+function setupCellEvents(cell) {
+    cell.addEventListener('click', () => {
+        const col = parseInt(cell.dataset.col); const row = cell.dataset.row;
+        if (state.selectedTool) {
+            if (state.selectedTool.isPos && (row === 'LPos' || row === 'RPos')) {
+                state.sequence[col][row] = state.sequence[col][row] === state.selectedTool.val ? null : state.selectedTool.val;
+                renderSequenceUI();
+            } else if (!state.selectedTool.isPos) {
+                let targetRow = (row === 'LPos') ? 'L' : (row === 'RPos' ? 'R' : row);
+                if (state.sequence[col][targetRow] === state.selectedTool.type) { state.sequence[col][targetRow] = null; } 
+                else {
+                    state.sequence[col][targetRow] = state.selectedTool.type;
+                    initAudio(); playTapSound(audioCtx.currentTime, targetRow, state.selectedTool.type); triggerAnimation(targetRow, state.selectedTool.type);
+                }
+                renderSequenceUI();
+            }
+        } else if (state.sequence[col][row] !== null) {
+            state.sequence[col][row] = null; renderSequenceUI();
+        }
+    });
+
+    cell.addEventListener('dragover', (e) => { e.preventDefault(); });
+    cell.addEventListener('drop', (e) => {
+        e.preventDefault(); const col = parseInt(cell.dataset.col); const row = cell.dataset.row;
+        if (state.draggedData) {
+            if (state.draggedData.isPos && (row === 'LPos' || row === 'RPos')) state.sequence[col][row] = state.draggedData.val;
+            else if (!state.draggedData.isPos && (row === 'L' || row === 'R')) state.sequence[col][row] = state.draggedData.type;
+            renderSequenceUI();
+        }
+    });
+}
+
+function renderSequenceUI() {
+    document.querySelectorAll('.time-cell').forEach(cell => {
+        const col = parseInt(cell.dataset.col); const row = cell.dataset.row;
+        const stepType = state.sequence[col][row];
+        cell.className = 'time-cell'; cell.textContent = '';
+        if (stepType) {
+            if (row === 'LPos' || row === 'RPos') { cell.classList.add('active-pos'); cell.textContent = stepType; } 
+            else {
+                cell.classList.add(row === 'L' ? 'active-left' : 'active-right');
+                cell.textContent = stepType === 'Shuffle' ? 'Shfl' : stepType;
+            }
+        }
+    });
+}
+
+function updatePlayheadUI(stepIndex) {
+    document.querySelectorAll('.time-cell.playing').forEach(c => c.classList.remove('playing'));
+    const activeCells = document.querySelectorAll(`.time-cell[data-col="${stepIndex}"]`);
+    activeCells.forEach(c => c.classList.add('playing'));
+    if(activeCells.length > 0) {
+        const wrapper = document.getElementById('timeline-wrapper');
+        const rect = activeCells[0].getBoundingClientRect();
+        const containerRect = wrapper.getBoundingClientRect();
+        // Inclui o scrollLeft para manter a precisão do alinhamento ao rolar em telas pequenas
+        document.getElementById('playhead').style.left = `${rect.left - containerRect.left + wrapper.scrollLeft + (rect.width/2)}px`;
+    }
+}
+
+// --- RENDERING 3D (THREE.JS) ---
+let scene, camera, renderer, controls;
+const shoes3D = { L: null, R: null };
+const glowLights = { L: null, R: null };
+const feetVisuals = {
+    L: { x: -25, z: 0, targetX: -25, targetZ: 0, isAnimating: false, animProgress: 0, glowType: null, glowIntensity: 0 },
+    R: { x: 25, z: 0, targetX: 25, targetZ: 0, isAnimating: false, animProgress: 0, glowType: null, glowIntensity: 0 }
+};
+
+// Gera o contorno realista da sola do sapato
+function createShoeShape(isLeft) {
+    const shape = new THREE.Shape();
+    const flip = isLeft ? -1 : 1;
+    shape.moveTo(0, 10);
+    shape.bezierCurveTo(4 * flip, 10, 6 * flip, 7, 5.5 * flip, 3); // Calcanhar externo
+    shape.bezierCurveTo(5 * flip, -1, 7.5 * flip, -5, 8.5 * flip, -9); // Arco externo
+    shape.bezierCurveTo(9.5 * flip, -15, 5 * flip, -18, 0, -18); // Bico externo
+    shape.bezierCurveTo(-5 * flip, -18, -8.5 * flip, -13, -7.5 * flip, -9); // Bico interno
+    shape.bezierCurveTo(-6 * flip, -3, -3 * flip, 1, -4.5 * flip, 3); // Arco interno (curva do pé)
+    shape.bezierCurveTo(-5.5 * flip, 7, -4 * flip, 10, 0, 10); // Calcanhar interno
+    return shape;
+}
+
+function initThreeJS() {
+    const container = document.getElementById('canvas3d');
+    scene = new THREE.Scene();
+    // Fundo e nevoeiro mais quentes para um aspeto de palco de madeira
+    scene.background = new THREE.Color(0x2a1f1a);
+    scene.fog = new THREE.Fog(0x2a1f1a, 100, 400);
+
+    camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 1, 1000);
+    camera.position.set(100, 100, 150);
+
+    renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(container.clientWidth, container.clientHeight);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    container.appendChild(renderer.domElement);
+
+    controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.target.set(0, 0, 0);
+    controls.maxPolarAngle = Math.PI / 2 + 0.05; 
+
+    // Iluminação refinada
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+    scene.add(ambientLight);
+
+    const dirLight = new THREE.DirectionalLight(0xffeedd, 0.8);
+    dirLight.position.set(50, 100, 50);
+    dirLight.castShadow = true;
+    dirLight.shadow.mapSize.width = 2048;
+    dirLight.shadow.mapSize.height = 2048;
+    dirLight.shadow.camera.near = 10;
+    dirLight.shadow.camera.far = 300;
+    dirLight.shadow.camera.left = -100;
+    dirLight.shadow.camera.right = 100;
+    dirLight.shadow.camera.top = 100;
+    dirLight.shadow.camera.bottom = -100;
+    dirLight.shadow.bias = -0.001;
+    scene.add(dirLight);
+
+    const fillLight = new THREE.DirectionalLight(0xaabbff, 0.3);
+    fillLight.position.set(-50, 50, -50);
+    scene.add(fillLight);
+
+    // Chão (Piso de Madeira)
+    const floorGeometry = new THREE.PlaneGeometry(500, 500);
+    const floorMaterial = new THREE.MeshStandardMaterial({ 
+        color: 0x4a2e15, roughness: 0.6, metalness: 0.1 
+    });
+    const floor = new THREE.Mesh(floorGeometry, floorMaterial);
+    floor.rotation.x = -Math.PI / 2;
+    floor.receiveShadow = true;
+    scene.add(floor);
+
+    const gridHelper = new THREE.GridHelper(500, 50, 0x000000, 0x000000);
+    gridHelper.material.opacity = 0.15;
+    gridHelper.material.transparent = true;
+    gridHelper.position.y = 0.1;
+    scene.add(gridHelper);
+
+    // Construir os Sapatos Realistas
+    shoes3D.L = createShoeGroup(0x8ab4f8, true);
+    shoes3D.R = createShoeGroup(0xf28b82, false);
+    scene.add(shoes3D.L);
+    scene.add(shoes3D.R);
+
+    // Luzes de Glow para feedback visual
+    glowLights.L = new THREE.PointLight(0x8ab4f8, 0, 60);
+    glowLights.R = new THREE.PointLight(0xf28b82, 0, 60);
+    scene.add(glowLights.L);
+    scene.add(glowLights.R);
+
+    window.addEventListener('resize', () => {
+        camera.aspect = container.clientWidth / container.clientHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(container.clientWidth, container.clientHeight);
+    });
+
+    animate3D();
+}
+
+function createShoeGroup(mainColor, isLeft) {
+    const group = new THREE.Group();
+
+    // Materiais Realistas com Transparência (Efeito Translúcido)
+    const matTap = new THREE.MeshStandardMaterial({ color: 0xdddddd, metalness: 0.9, roughness: 0.2 });
+    
+    const matSoleBase = new THREE.MeshStandardMaterial({ 
+        color: 0x110a05, roughness: 0.9, transparent: true, opacity: 0.85 
+    });
+    const matTrim = new THREE.MeshStandardMaterial({ 
+        color: 0x3d2314, roughness: 0.8, transparent: true, opacity: 0.9 
+    });
+    const matUpper = new THREE.MeshStandardMaterial({ 
+        color: mainColor, roughness: 0.3, metalness: 0.2, 
+        transparent: true, opacity: 0.65 // Deixa o sapato translúcido para a luz aparecer!
+    });
+    const matInside = new THREE.MeshBasicMaterial({ 
+        color: 0x050505, transparent: true, opacity: 0.8 
+    });
+    
+    // Chapas de Metal (Taps) - Assentes no chão (Y ~ 0.2)
+    const tapToe = new THREE.Mesh(new THREE.CylinderGeometry(6.5, 6.5, 0.4, 32), matTap);
+    tapToe.position.set((isLeft ? -0.5 : 0.5), 0.2, -13); // Movido para -13 para alinhar perfeitamente
+    tapToe.castShadow = true;
+    group.add(tapToe);
+
+    const tapHeel = new THREE.Mesh(new THREE.CylinderGeometry(4.5, 4.5, 0.4, 32), matTap);
+    tapHeel.position.set(0, 0.2, 6);
+    tapHeel.castShadow = true;
+    group.add(tapHeel);
+
+    // Bloco do Salto (Heel Block)
+    const heelBlock = new THREE.Mesh(new THREE.CylinderGeometry(4.8, 5.2, 3.5, 32), matSoleBase);
+    heelBlock.position.set(0, 2.15, 6);
+    heelBlock.castShadow = true;
+    group.add(heelBlock);
+
+    // --- PARTE SUPERIOR INCLINADA (TILTED) ---
+    const tiltedGroup = new THREE.Group();
+    tiltedGroup.position.set(0, 3.9, 6); // Eixo de rotação no topo do salto
+    tiltedGroup.rotation.x = -0.25; // Rotação NEGATIVA para fazer o bico encostar perfeitamente na chapa!
+    group.add(tiltedGroup);
+
+    // 1. Sola Realista (Extrusão)
+    const shape = createShoeShape(isLeft);
+    const extrudeSettings = { depth: 1.2, bevelEnabled: true, bevelThickness: 0.3, bevelSize: 0.3, bevelSegments: 3 };
+    const soleGeo = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+    soleGeo.rotateX(Math.PI / 2); 
+    const sole = new THREE.Mesh(soleGeo, matSoleBase);
+    sole.position.set(0, 1.2, -6); // Offset para alinhar a geometria com o eixo
+    sole.castShadow = true;
+    tiltedGroup.add(sole);
+
+    // 2. Borda/Costura da Sola (Welt)
+    const trimGeo = new THREE.ExtrudeGeometry(shape, { depth: 0.3, bevelEnabled: false });
+    trimGeo.rotateX(Math.PI / 2);
+    const trim = new THREE.Mesh(trimGeo, matTrim);
+    trim.position.set(0, 1.5, -6);
+    trim.scale.set(1.03, 1, 1.03); // Ligeiramente mais largo
+    trim.castShadow = true;
+    tiltedGroup.add(trim);
+
+    // --- CORPO DE COURO (Upper) ---
+    const upperGroup = new THREE.Group();
+    upperGroup.position.set(0, 1.5, -6); 
+    tiltedGroup.add(upperGroup);
+
+    // Bico do Sapato (Toe Box)
+    const toeGeo = new THREE.SphereGeometry(7, 32, 16);
+    const toe = new THREE.Mesh(toeGeo, matUpper);
+    toe.scale.set(1.05, 0.7, 1.2);
+    toe.position.set((isLeft ? -0.5 : 0.5), 3, -14);
+    toe.castShadow = true;
+    upperGroup.add(toe);
+
+    // Corpo Central (Mid/Laces)
+    const midGeo = new THREE.CylinderGeometry(6.5, 7.5, 12, 32);
+    const mid = new THREE.Mesh(midGeo, matUpper);
+    mid.rotation.x = Math.PI / 2 + 0.15; 
+    mid.position.set(0, 4.5, -6);
+    mid.castShadow = true;
+    upperGroup.add(mid);
+
+    // Calcanhar / Tornozelo
+    const heelGeo = new THREE.SphereGeometry(6.5, 32, 16);
+    const heel = new THREE.Mesh(heelGeo, matUpper);
+    heel.scale.set(0.95, 1.4, 1.1);
+    heel.position.set(0, 6, 4);
+    heel.castShadow = true;
+    upperGroup.add(heel);
+
+    // Abertura do Tornozelo (Collar)
+    const collar = new THREE.Mesh(new THREE.CylinderGeometry(4.5, 4.5, 3, 32), matInside);
+    collar.position.set(0, 12, 3);
+    collar.rotation.x = -0.15;
+    upperGroup.add(collar);
+
+    // Cadarços (Laces)
+    const laceMat = new THREE.MeshStandardMaterial({ color: 0xdddddd });
+    for(let i=0; i<4; i++) {
+        const lace = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 5), laceMat);
+        lace.rotation.z = Math.PI / 2;
+        lace.rotation.x = 0.2;
+        lace.position.set(0, 9.5 + i*0.8, -2 - i*1.3);
+        upperGroup.add(lace);
+    }
+
+    return group;
+}
+
+function triggerAnimation(foot, type) {
+    const f = feetVisuals[foot];
+    f.isAnimating = true; f.animProgress = 0;
+    f.glowType = type; f.glowIntensity = 1.0;
+}
+
+function animate3D() {
+    requestAnimationFrame(animate3D);
+    controls.update();
+
+    ['L', 'R'].forEach(foot => {
+        const vis = feetVisuals[foot];
+        const shoe = shoes3D[foot];
+        const light = glowLights[foot];
+
+        // 1. Posição X e Z (Interpolação suave)
+        vis.x += (vis.targetX - vis.x) * 0.15;
+        vis.z += (vis.targetZ - vis.z) * 0.15;
+        shoe.position.x = vis.x;
+
+        // 2. Animação de Elevação, Rotação e Deslizamento
+        let elevation = 0;
+        let pitch = 0;
+        let zOffset = 0;
+
+        if (vis.isAnimating) {
+            const p = vis.animProgress;
+            // doubleBounce faz o sapato pular duas vezes (0 -> 1 -> 0 -> 1 -> 0)
+            // O impacto no chão acontece exatamente em p = 0.5 (o meio da animação)
+            const doubleBounce = Math.abs(Math.sin(p * Math.PI * 2));
+            const singleArc = Math.sin(p * Math.PI); 
+
+            switch(vis.glowType) {
+                case 'Step': 
+                    elevation = doubleBounce * 6; 
+                    break;
+                case 'Ball': 
+                    elevation = doubleBounce * 6; 
+                    pitch = -0.2 * singleArc;
+                    break;
+                case 'Stomp': 
+                    elevation = doubleBounce * 12; 
+                    break;
+                case 'Toe': 
+                    elevation = doubleBounce * 10; // O pé inteiro levanta
+                    pitch = -0.8 * singleArc; // Calcanhar no alto, ponta para baixo
+                    break;
+                case 'Heel': 
+                    elevation = doubleBounce * 10; // O pé inteiro levanta
+                    pitch = 0.8 * singleArc; // Ponta no alto, calcanhar para baixo
+                    break;
+                case 'Shuffle':
+                    elevation = doubleBounce * 4;
+                    pitch = Math.sin(p * Math.PI * 2) * 0.25;
+                    zOffset = -Math.sin(p * Math.PI * 2) * 12; // Movimenta o pé pra frente e pra trás
+                    break;
+            }
+
+            vis.animProgress += 0.08;
+            if (vis.animProgress >= 1) vis.isAnimating = false;
+        }
+
+        shoe.rotation.x = pitch;
+
+        // Física: Pivot de Ancoragem
+        // Garante que, independentemente da rotação, a parte mais baixa do sapato não atravesse o chão
+        let pivotCompensation = 0;
+        let zPivotComp = 0;
+        if (pitch < 0) {
+            pivotCompensation = Math.sin(Math.abs(pitch)) * 13; // Ancora na chapa da ponta
+            zPivotComp = -(1 - Math.cos(pitch)) * 13;
+        } else if (pitch > 0) {
+            pivotCompensation = Math.sin(Math.abs(pitch)) * 6; // Ancora na chapa do calcanhar
+            zPivotComp = (1 - Math.cos(pitch)) * 6;
+        }
+        
+        // O sapato sobe com a 'elevation' e o pivot garante o toque exato no chão
+        shoe.position.y = elevation + pivotCompensation;
+        shoe.position.z = vis.z + zOffset + zPivotComp;
+
+        // 3. Atualizar Luzes de Glow (Feedback Visual)
+        if (vis.glowIntensity > 0) {
+            vis.glowIntensity -= 0.05;
+            if (vis.glowIntensity < 0) vis.glowIntensity = 0;
+        }
+
+        light.intensity = vis.glowIntensity * (vis.glowType === 'Stomp' ? 5 : 3);
+        if(vis.glowType === 'Stomp') light.color.setHex(0xffd700);
+        else light.color.setHex(foot === 'L' ? 0x8ab4f8 : 0xf28b82);
+
+        // Posiciona a luz no INTERIOR do sapato, quase no topo
+        light.position.x = shoe.position.x;
+        light.position.y = shoe.position.y + 10; 
+        light.position.z = shoe.position.z - 2;
+    });
+
+    renderer.render(scene, camera);
+}
+
+// --- GESTÃO DE DADOS (MODAIS, GLOSSÁRIO) ---
+function toggleGlossary() { document.getElementById('glossary-panel').classList.toggle('show'); }
+
+function previewGlossaryStep(type) {
+    if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel(); 
+        const msg = new SpeechSynthesisUtterance(type);
+        msg.lang = 'en-US'; msg.rate = 1.0;
+        window.speechSynthesis.speak(msg);
+    }
+    initAudio();
+    
+    feetVisuals.R.targetX = 25; feetVisuals.R.targetZ = 0;
+    setTimeout(() => {
+        const t = audioCtx.currentTime;
+        playTapSound(t, 'R', type); triggerAnimation('R', type);
+    }, 400);
+}
+
+function openModal() { document.getElementById('modal-overlay').style.display = 'flex'; }
+function closeModal() { 
+    document.getElementById('modal-overlay').style.display = 'none'; 
+    document.getElementById('save-input-area').style.display = 'none'; 
+    document.getElementById('modal-confirm').style.display = 'none'; 
+}
+
+function loadSequence(seqData) {
+    state.sequence = Array.from({ length: 32 }, () => ({ L: null, R: null, LPos: null, RPos: null })); 
+    seqData.forEach(item => { if(item.step >= 0 && item.step < 32) state.sequence[item.step][item.f] = item.t; });
+    updateFootPosition('L', state.sequence[0].LPos || 'C');
+    updateFootPosition('R', state.sequence[0].RPos || 'C');
+    renderSequenceUI(); closeModal();
+}
+
+function showPresets() {
+    const title = document.getElementById('modal-title');
+    const list = document.getElementById('modal-list');
+    title.textContent = "Aprender Sequências"; list.innerHTML = '';
+    
+    Object.keys(presets).forEach(name => {
+        const li = document.createElement('li'); li.textContent = "▶ " + name;
+        li.onclick = () => loadSequence(presets[name]); list.appendChild(li);
+    });
+
+    const saved = JSON.parse(localStorage.getItem('tapSequences') || '{}');
+    if (Object.keys(saved).length > 0) {
+        list.appendChild(document.createElement('hr'));
+        const lbl = document.createElement('div'); lbl.innerHTML = "<b>Minhas Sequências:</b>"; list.appendChild(lbl);
+        Object.keys(saved).forEach(name => {
+            const li = document.createElement('li');
+            li.innerHTML = `⭐ ${name} <span style="float:right; color:red; font-size:12px;" onclick="deleteSaved(event, '${name}')">Excluir</span>`;
+            li.onclick = (e) => { if(e.target.tagName !== 'SPAN') loadSequence(saved[name]); };
+            list.appendChild(li);
+        });
+    }
+    openModal();
+}
+
+window.deleteSaved = function(event, name) {
+    event.stopPropagation();
+    if(confirm(`Excluir '${name}'?`)) {
+        let saved = JSON.parse(localStorage.getItem('tapSequences') || '{}');
+        delete saved[name]; localStorage.setItem('tapSequences', JSON.stringify(saved));
+        showPresets(); 
+    }
+}
+
+function showSaveMenu() {
+    document.getElementById('modal-title').textContent = "Salvar Sequência";
+    document.getElementById('modal-list').innerHTML = '';
+    document.getElementById('save-input-area').style.display = 'block';
+    const btn = document.getElementById('modal-confirm');
+    btn.style.display = 'block';
+    
+    const input = document.getElementById('save-name');
+    input.value = ''; input.focus();
+
+    btn.onclick = () => {
+        const name = input.value.trim();
+        if(!name) { alert("Digite um nome!"); return; }
+        const dataToSave = [];
+        state.sequence.forEach((step, index) => {
+            if(step.L) dataToSave.push({step: index, f: 'L', t: step.L});
+            if(step.R) dataToSave.push({step: index, f: 'R', t: step.R});
+            if(step.LPos) dataToSave.push({step: index, f: 'LPos', t: step.LPos});
+            if(step.RPos) dataToSave.push({step: index, f: 'RPos', t: step.RPos});
+        });
+        if(dataToSave.length === 0) { alert("A sequência está vazia!"); return; }
+
+        let saved = JSON.parse(localStorage.getItem('tapSequences') || '{}');
+        saved[name] = dataToSave;
+        localStorage.setItem('tapSequences', JSON.stringify(saved));
+        alert("Salvo com sucesso!"); closeModal();
+    };
+    openModal();
+}
+
+window.onload = () => {
+    initThreeJS();
+    initUI();
+    renderSequenceUI();
+    loadSequence(presets["1. Marcha Básica"]);
+};
+</script>
+</body>
+</html>
